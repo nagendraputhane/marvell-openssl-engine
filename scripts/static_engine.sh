@@ -9,7 +9,7 @@ fi
 mkdir -p crypto/dpdkcpt
 
 #copy engine files
-cp $ENGINE_PATH/e_dpdkcpt* crypto/dpdkcpt/
+cp $ENGINE_PATH/openssl_engine/* crypto/dpdkcpt/
 
 #export LIBRARY PATH
 export LD_LIBRARY_PATH=$RTE_SDK/build/lib

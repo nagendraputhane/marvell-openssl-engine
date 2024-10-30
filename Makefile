@@ -42,39 +42,37 @@ endif
 
 LIBABIVER=1
 
-# library name
-LIB = dpdk_engine.a
+# Library names
+LIB_OPENSSL_ENGINE = openssl_engine.a
+LIB_PAL = pal_dpdk_crypto.a
+LIB_DPDK_ENGINE = dpdk_engine.a
 
-# all source are stored in SRCS
-SRCS :=  e_dpdkcpt.c
-SRCS +=  e_dpdkcpt_gcm.c
-SRCS +=  e_dpdkcpt_cbc.c
-SRCS +=  e_dpdkcpt_aes_cbc_hmac_sha1.c
-SRCS +=  e_dpdkcpt_rsa.c
-SRCS +=  e_dpdkcpt_ecdsa.c
-SRCS +=  e_dpdkcpt_malloc.c
-SRCS +=  e_dpdkcpt_cpoly.c
-SRCS +=  e_dpdkcpt_usr.c
+# All source files are stored in SRCS
+SRCS_OPENSSL_ENGINE = $(wildcard openssl_engine/*.c)
+SRCS_PAL = $(wildcard pal/*.c)
 
 CC=$(CROSS)gcc
-OBJS += $(subst .c,.o,$(SRCS))
-%.o: %.c $(wildcard *.h)
-	$(CC) $(CFLAGS) $(DEBUG) -fPIC -c $<
+OBJS_OPENSSL_ENGINE = $(patsubst %.c,%.o,$(SRCS_OPENSSL_ENGINE))
+OBJS_PAL = $(patsubst %.c,%.o,$(SRCS_PAL))
 
-dpdk_engine.so: $(OBJS) Makefile $(PC_FILE)
+%.o: %.c $(wildcard *.h) $(wildcard pal/*.h)
+	$(CC) $(CFLAGS) $(DEBUG) -fPIC -c $< -o $@
+
+all: $(LIB_OPENSSL_ENGINE) $(LIB_PAL) dpdk_engine.so
+
+$(LIB_OPENSSL_ENGINE): $(OBJS_OPENSSL_ENGINE)
+	ar rcs $@ $^
+
+$(LIB_PAL): $(OBJS_PAL)
+	ar rcs $@ $^
+
+dpdk_engine.so: $(LIB_OPENSSL_ENGINE) $(LIB_PAL) Makefile $(PC_FILE)
 # chacha-armv8-sve.S file is present in openssl versions >= 3.1, not in 1.1.x
 ifneq ("$(wildcard $(OPENSSL_INSTALL)/crypto/chacha/chacha-armv8-sve.S)","")
-	$(CC) $(CFLAGS) -shared $(OBJS) -o $@ $(LDFLAGS) $(LDFLAGS_SHARED) $(OPENSSL_INSTALL)/crypto/aes/aesv8-armx.S $(OPENSSL_INSTALL)/crypto/chacha/chacha-armv8.S  $(OPENSSL_INSTALL)/crypto/chacha/chacha-armv8-sve.S  $(OPENSSL_INSTALL)/crypto/poly1305/poly1305.c $(OPENSSL_INSTALL)/crypto/poly1305/poly1305-armv8.S $(OPENSSL_INSTALL)/crypto/armcap.c $(OPENSSL_INSTALL)/crypto/arm64cpuid.S
+	$(CC) $(CFLAGS) -shared $(OBJS_OPENSSL_ENGINE) $(OBJS_PAL) -o $@ $(LDFLAGS) $(LDFLAGS_SHARED) $(OPENSSL_INSTALL)/crypto/aes/aesv8-armx.S $(OPENSSL_INSTALL)/crypto/chacha/chacha-armv8.S $(OPENSSL_INSTALL)/crypto/chacha/chacha-armv8-sve.S $(OPENSSL_INSTALL)/crypto/poly1305/poly1305.c $(OPENSSL_INSTALL)/crypto/poly1305/poly1305-armv8.S $(OPENSSL_INSTALL)/crypto/armcap.c $(OPENSSL_INSTALL)/crypto/arm64cpuid.S
 else
-	$(CC) $(CFLAGS) -shared $(OBJS) -o $@ $(LDFLAGS) $(LDFLAGS_SHARED) $(OPENSSL_INSTALL)/crypto/aes/aesv8-armx.S $(OPENSSL_INSTALL)/crypto/chacha/chacha-armv8.S  $(OPENSSL_INSTALL)/crypto/poly1305/poly1305.c $(OPENSSL_INSTALL)/crypto/poly1305/poly1305-armv8.S $(OPENSSL_INSTALL)/crypto/armcap.c $(OPENSSL_INSTALL)/crypto/arm64cpuid.S
-endif
-
-$(APP)-static: $(OBJS) Makefile $(PC_FILE)
-ifneq ("$(wildcard $(OPENSSL_INSTALL)/crypto/chacha/chacha-armv8-sve.S)","")
-	$(CC) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LDFLAGS_STATIC) $(OPENSSL_INSTALL)/crypto/aes/aesv8-armx.S $(OPENSSL_INSTALL)/crypto/chacha/chacha-armv8.S $(OPENSSL_INSTALL)/crypto/chacha/chacha-armv8-sve.S $(OPENSSL_INSTALL)/crypto/poly1305/poly1305.c $(OPENSSL_INSTALL)/crypto/poly1305/poly1305-armv8.S $(OPENSSL_INSTALL)/crypto/armcap.c $(OPENSSL_INSTALL)/crypto/arm64cpuid.S
-else
-	$(CC) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LDFLAGS_STATIC) $(OPENSSL_INSTALL)/crypto/aes/aesv8-armx.S $(OPENSSL_INSTALL)/crypto/chacha/chacha-armv8.S $(OPENSSL_INSTALL)/crypto/poly1305/poly1305.c $(OPENSSL_INSTALL)/crypto/poly1305/poly1305-armv8.S $(OPENSSL_INSTALL)/crypto/armcap.c $(OPENSSL_INSTALL)/crypto/arm64cpuid.S
+	$(CC) $(CFLAGS) -shared $(OBJS_OPENSSL_ENGINE) $(OBJS_PAL) -o $@ $(LDFLAGS) $(LDFLAGS_SHARED) $(OPENSSL_INSTALL)/crypto/aes/aesv8-armx.S $(OPENSSL_INSTALL)/crypto/chacha/chacha-armv8.S $(OPENSSL_INSTALL)/crypto/poly1305/poly1305.c $(OPENSSL_INSTALL)/crypto/poly1305/poly1305-armv8.S $(OPENSSL_INSTALL)/crypto/armcap.c $(OPENSSL_INSTALL)/crypto/arm64cpuid.S
 endif
 
 clean:
-	rm -fr $(OBJS) dpdk_engine.so
+	rm -fr $(OBJS_OPENSSL_ENGINE) $(OBJS_PAL) $(LIB_OPENSSL_ENGINE) $(LIB_PAL) dpdk_engine.so

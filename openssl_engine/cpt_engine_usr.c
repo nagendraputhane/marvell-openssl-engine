@@ -2,10 +2,10 @@
  * Copyright (c) 2024 Marvell.
  */
 
+#include "cpt_engine.h"
 #include <rte_lcore.h>
 #include <rte_errno.h>
-#include "e_dpdkcpt.h"
-#include "e_dpdkcpt_usr.h"
+#include "cpt_engine_usr.h"
 
 int dpdk_rte_thread_register(void)
 {

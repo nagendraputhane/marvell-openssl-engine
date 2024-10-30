@@ -2,8 +2,8 @@
  * Copyright (c) 2024 Marvell.
  */
 
-#ifndef _E_DPDKCPT_ECDSA_H
-#define _E_DPDKCPT_ECDSA_H
+#ifndef _CPT_ENGINE_ECDSA_H_
+#define _CPT_ENGINE_ECDSA_H_
 
 #include <openssl/bn.h>
 #include <openssl/ec.h>
@@ -22,29 +22,4 @@ int ecdh_keygen(EC_KEY *key);
 
 int ecdh_compute_key(unsigned char **psec, size_t *pseclen,
 		      const EC_POINT *pub_key, const EC_KEY *ecdh);
-
-static inline void free_crypto_param(rte_crypto_param *p)
-{
-	free(p->data);
-	p->data = NULL;
-	p->length = 0;
-	return;
-}
-
-static inline int bn_to_crypto_param(rte_crypto_param *cp, const BIGNUM *bn)
-{
-	cp->data = malloc(PCURVES_MAX_PRIME_LEN);
-	if (!cp->data)
-		return 0;
-
-	cp->length = BN_num_bytes(bn);
-	memset(cp->data, 0, PCURVES_MAX_PRIME_LEN);
-	if (BN_bn2bin(bn, cp->data) <= 0) {
-		free_crypto_param(cp);
-		return 0;
-	}
-
-	return 1;
-}
-
-#endif
+#endif //_CPT_ENGINE_ECDSA_H_
