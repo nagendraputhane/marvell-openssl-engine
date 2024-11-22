@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <stdint.h>
 
+#include <openssl/ssl.h>
 #include <openssl/rsa.h>
 #include <openssl/engine.h>
 #include <openssl/evp.h>
@@ -107,6 +108,7 @@ struct ossl_dpdk_cpoly_ctx {
 	uint32_t aad_cnt;
 	char aad_pipe[SSL_MAX_PIPELINES][TLS_HDR_SIZE];
 	int hw_offload_pkt_sz_threshold;
+        uint8_t is_tlsv_1_3;
 };
 
 const EVP_CIPHER *EVP_dpdkcpt_chacha20_poly1305(void);
@@ -120,6 +122,8 @@ static int dpdkcpt_chacha20_poly1305_ctrl(EVP_CIPHER_CTX *c, int type,
 static int create_crypto_operation_pl(struct ossl_dpdk_cpoly_ctx *dpdk_ctx,
 		const uint8_t *in, int len, int enc, uint8_t pipe_index);
 static int dpdkcpt_chacha20_poly1305_crypto(EVP_CIPHER_CTX *ctx,
+		unsigned char *out, const unsigned char *in, size_t len);
+static int tls13_dpdkcpt_chacha20_poly1305(EVP_CIPHER_CTX *ctx,
 		unsigned char *out, const unsigned char *in, size_t len);
 static int dpdkcpt_chacha20_poly1305_tls_cipher(EVP_CIPHER_CTX *ctx,
 		unsigned char *out, const unsigned char *in, size_t len);
@@ -259,10 +263,9 @@ static int dpdkcpt_chacha20_poly1305_init_key(EVP_CIPHER_CTX *ctx,
 		dpdk_ctx->key_len = E_DPDKCPT_CPOLY_KEY_LEN;
 		memcpy(dpdk_ctx->key, key, E_DPDKCPT_CPOLY_KEY_LEN);
 		dpdk_ctx->auth_taglen = E_DPDKCPT_CPOLY_AEAD_DIGEST_LEN;
-		dpdk_ctx->aad_len = EVP_AEAD_TLS1_AAD_LEN;
 		dpdk_ctx->numpipes = 0;
 		int retval = create_cpoly_aead_session(
-				dpdk_ctx, enc, dpdk_ctx->aad_len, 0);
+				dpdk_ctx, enc, EVP_AEAD_TLS1_AAD_LEN, 0);
 		if (retval < 0) {
 			engine_log(ENG_LOG_ERR, "AEAD Sesion creation failed.\n");
 			return 0;
@@ -662,14 +665,86 @@ static int chacha_cipher(EVP_CIPHER_CTX * ctx, unsigned char *out,
 	return 1;
 }
 
+static inline void cpoly_mac_init(EVP_CHACHA_AEAD_CTX *actx)
+{
+        size_t plen = actx->tls_payload_length;
+
+        actx->key.counter[0] = 0;
+        ChaCha20_ctr32(actx->key.buf, zero, CHACHA_BLK_SIZE,
+                        actx->key.key.d, actx->key.counter);
+        Poly1305_Init(POLY1305_ctx(actx), actx->key.buf);
+        actx->key.counter[0] = 1;
+        actx->key.partial_len = 0;
+        actx->len.aad = actx->len.text = 0;
+        actx->mac_inited = 1;
+        if (plen != NO_TLS_PAYLOAD_LENGTH) {
+                Poly1305_Update(POLY1305_ctx(actx), actx->tls_aad,
+                                EVP_AEAD_TLS1_AAD_LEN);
+                actx->len.aad = EVP_AEAD_TLS1_AAD_LEN;
+                actx->aad = 1;
+        }
+}
+
+static int  cpoly_update_aad_create_aead_session (EVP_CIPHER_CTX *ctx, unsigned char *out,
+        const unsigned char *in, size_t len)
+{
+        int ret;
+        uint16_t *tls_ver;
+	int enc = EVP_CIPHER_CTX_encrypting(ctx);
+	struct ossl_dpdk_cpoly_ctx *dpdk_ctx = EVP_CIPHER_CTX_get_cipher_data(ctx);
+         EVP_CHACHA_AEAD_CTX *actx = dpdk_ctx->actx;
+
+	if (!actx->mac_inited)
+	cpoly_mac_init(actx);
+
+	Poly1305_Update(POLY1305_ctx(actx), in, len);
+	actx->len.aad += len;
+	actx->aad = 1;
+	tls_ver = (uint16_t *) (in+1);
+
+	if( *tls_ver>= TLS1_2_VERSION)
+	dpdk_ctx->is_tlsv_1_3 = 1;
+
+	memcpy(dpdk_ctx->aad, in, len);
+	if (((size_t)dpdk_ctx->aad_len != len)) {
+		int ret = create_cpoly_aead_session(dpdk_ctx,
+				enc, len, 1);
+		if (ret < 0)
+			return -1;
+
+		dpdk_ctx->aad_len = len;
+	}
+	return len;
+}
+
 static int dpdkcpt_chacha20_poly1305_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 		const unsigned char *in, size_t len)
 {
 	int ret;
+        uint16_t *tls_ver;
+        int enc = EVP_CIPHER_CTX_encrypting(ctx);
 	struct ossl_dpdk_cpoly_ctx *dpdk_ctx = EVP_CIPHER_CTX_get_cipher_data(ctx);
+	EVP_CHACHA_AEAD_CTX *actx = dpdk_ctx->actx;
 
 	if (dpdk_ctx->tls_aad_len >= 0)
+        {
+		/*
+		 * Handles all the cipher calls for TLS application mode where
+		 * TLS version is < TLS 1.3
+		 */
 		ret = dpdkcpt_chacha20_poly1305_tls_cipher(ctx, out, in, len);
+                if (ret < 0)
+                   return -1;
+
+                return ret;
+
+        }
+
+        if (in != NULL && out == NULL)
+          return cpoly_update_aad_create_aead_session(ctx, out, in, len);
+
+	if (dpdk_ctx->is_tlsv_1_3)
+		ret = tls13_dpdkcpt_chacha20_poly1305(ctx, out, in, len);
 	else
 		ret = dpdkcpt_chacha20_poly1305_crypto(ctx, out, in, len);
 
@@ -983,27 +1058,7 @@ free_resources:
 	return ret;
 }
 
-static inline void cpoly_mac_init(EVP_CHACHA_AEAD_CTX *actx)
-{
-	size_t plen = actx->tls_payload_length;
-
-	actx->key.counter[0] = 0;
-	ChaCha20_ctr32(actx->key.buf, zero, CHACHA_BLK_SIZE,
-			actx->key.key.d, actx->key.counter);
-	Poly1305_Init(POLY1305_ctx(actx), actx->key.buf);
-	actx->key.counter[0] = 1;
-	actx->key.partial_len = 0;
-	actx->len.aad = actx->len.text = 0;
-	actx->mac_inited = 1;
-	if (plen != NO_TLS_PAYLOAD_LENGTH) {
-		Poly1305_Update(POLY1305_ctx(actx), actx->tls_aad,
-				EVP_AEAD_TLS1_AAD_LEN);
-		actx->len.aad = EVP_AEAD_TLS1_AAD_LEN;
-		actx->aad = 1;
-	}
-}
-
-static int dpdkcpt_chacha20_poly1305_crypto(EVP_CIPHER_CTX *ctx, unsigned char *out,
+static int tls13_dpdkcpt_chacha20_poly1305(EVP_CIPHER_CTX *ctx, unsigned char *out,
 	const unsigned char *in, size_t len)
 {
 	int retval, enc, rv = -1;
@@ -1016,61 +1071,289 @@ static int dpdkcpt_chacha20_poly1305_crypto(EVP_CIPHER_CTX *ctx, unsigned char *
 	EVP_CHACHA_AEAD_CTX *actx = dpdk_ctx->actx;
 	size_t rem, plen = actx->tls_payload_length;
 	static int sw_cpoly_encrypt = 0, sw_cpoly_decrypt = 0;
+        ASYNC_JOB *job = NULL;
+        ASYNC_WAIT_CTX *wctx_local = NULL;
+        async_pipe_job_t pip_jobs[MAX_PIPE_JOBS];
+        uint8_t pip_jb_qsz = 0;
 
 	enc = EVP_CIPHER_CTX_encrypting(ctx);
 
 	if (in != NULL) {
-		if (out == NULL) {
+
+		if (len < dpdk_ctx->hw_offload_pkt_sz_threshold) {
+
 			if (!actx->mac_inited)
 				cpoly_mac_init(actx);
-			Poly1305_Update(POLY1305_ctx(actx), in, len);
-			actx->len.aad += len;
-			actx->aad = 1;
+			if (actx->aad) {                    /* wrap up aad */
+				if ((rem = (size_t)actx->len.aad % POLY1305_BLOCK_SIZE))
+					Poly1305_Update(POLY1305_ctx(actx), zero,
+							POLY1305_BLOCK_SIZE - rem);
+				actx->aad = 0;
+			}
 
-			memcpy(dpdk_ctx->aad, in, len);
-			if (((size_t)dpdk_ctx->aad_len != len)) {
-				int ret = create_cpoly_aead_session(dpdk_ctx,
-								    enc, len, 1);
-				if (ret < 0)
-					return ret;
-				dpdk_ctx->aad_len = len;
+			actx->tls_payload_length = NO_TLS_PAYLOAD_LENGTH;
+			if (plen == NO_TLS_PAYLOAD_LENGTH)
+				plen = len;
+			else if (len != plen + POLY1305_BLOCK_SIZE)
+				return -1;
+
+			if (enc) {                 /* plaintext */
+				chacha_cipher(ctx, out, in, plen);
+				Poly1305_Update(POLY1305_ctx(actx), out, plen);
+				in += plen;
+				out += plen;
+				actx->len.text += plen;
+				sw_cpoly_encrypt = 1;
+			} else {                            /* ciphertext */
+				Poly1305_Update(POLY1305_ctx(actx), in, plen);
+				chacha_cipher(ctx, out, in, plen);
+				in += plen;
+				out += plen;
+				actx->len.text += plen;
+				sw_cpoly_decrypt = 1;
 			}
 			return len;
-		} else {                                /* plain- or ciphertext */
-			if (len < dpdk_ctx->hw_offload_pkt_sz_threshold) {
+		}
 
-				if (!actx->mac_inited)
-					cpoly_mac_init(actx);
-				if (actx->aad) {                    /* wrap up aad */
-					if ((rem = (size_t)actx->len.aad % POLY1305_BLOCK_SIZE))
-						Poly1305_Update(POLY1305_ctx(actx), zero,
-								POLY1305_BLOCK_SIZE - rem);
-					actx->aad = 0;
-				}
+	}
 
-				actx->tls_payload_length = NO_TLS_PAYLOAD_LENGTH;
-				if (plen == NO_TLS_PAYLOAD_LENGTH)
-					plen = len;
-				else if (len != plen + POLY1305_BLOCK_SIZE)
+	if (((in == NULL) || (plen != len)) && (sw_cpoly_decrypt || sw_cpoly_encrypt)) {
+		const union {
+			long one;
+			char little;
+		} is_endian = { 1 };
+		unsigned char temp[POLY1305_BLOCK_SIZE];
+
+		if (actx->aad) {                        /* wrap up aad */
+			if ((rem = (size_t)actx->len.aad % POLY1305_BLOCK_SIZE))
+				Poly1305_Update(POLY1305_ctx(actx), zero,
+						POLY1305_BLOCK_SIZE - rem);
+			actx->aad = 0;
+		}
+
+		if ((rem = (size_t)actx->len.text % POLY1305_BLOCK_SIZE))
+			Poly1305_Update(POLY1305_ctx(actx), zero,
+					POLY1305_BLOCK_SIZE - rem);
+
+		if (is_endian.little) {
+			Poly1305_Update(POLY1305_ctx(actx),
+					(unsigned char *)&actx->len, POLY1305_BLOCK_SIZE);
+		} else {
+			temp[0]  = (unsigned char)(actx->len.aad);
+			temp[1]  = (unsigned char)(actx->len.aad>>8);
+			temp[2]  = (unsigned char)(actx->len.aad>>16);
+			temp[3]  = (unsigned char)(actx->len.aad>>24);
+			temp[4]  = (unsigned char)(actx->len.aad>>32);
+			temp[5]  = (unsigned char)(actx->len.aad>>40);
+			temp[6]  = (unsigned char)(actx->len.aad>>48);
+			temp[7]  = (unsigned char)(actx->len.aad>>56);
+			temp[8]  = (unsigned char)(actx->len.text);
+			temp[9]  = (unsigned char)(actx->len.text>>8);
+			temp[10] = (unsigned char)(actx->len.text>>16);
+			temp[11] = (unsigned char)(actx->len.text>>24);
+			temp[12] = (unsigned char)(actx->len.text>>32);
+			temp[13] = (unsigned char)(actx->len.text>>40);
+			temp[14] = (unsigned char)(actx->len.text>>48);
+			temp[15] = (unsigned char)(actx->len.text>>56);
+
+			Poly1305_Update(POLY1305_ctx(actx), temp, POLY1305_BLOCK_SIZE);
+		}
+		Poly1305_Final(POLY1305_ctx(actx), enc ? actx->tag
+				: temp);
+		if (enc) {
+			memcpy(dpdk_ctx->auth_tag, actx->tag, POLY1305_BLOCK_SIZE);
+			sw_cpoly_encrypt = 0;
+		} else {
+			memcpy(dpdk_ctx->auth_tag, temp, POLY1305_BLOCK_SIZE);
+			sw_cpoly_decrypt = 0;
+		}
+		actx->mac_inited = 0;
+
+		if (in != NULL && len != plen) {        /* tls mode */
+			if (enc) {
+				memcpy(out, actx->tag, POLY1305_BLOCK_SIZE);
+				memcpy(dpdk_ctx->auth_tag, actx->tag, POLY1305_BLOCK_SIZE);
+				sw_cpoly_encrypt = 0;
+			} else {
+				if (CRYPTO_memcmp(temp, in, POLY1305_BLOCK_SIZE)) {
+					memset(out - plen, 0, plen);
 					return -1;
-
-				if (enc) {                 /* plaintext */
-					chacha_cipher(ctx, out, in, plen);
-					Poly1305_Update(POLY1305_ctx(actx), out, plen);
-					in += plen;
-					out += plen;
-					actx->len.text += plen;
-					sw_cpoly_encrypt = 1;
-				} else {                            /* ciphertext */
-					Poly1305_Update(POLY1305_ctx(actx), in, plen);
-					chacha_cipher(ctx, out, in, plen);
-					in += plen;
-					out += plen;
-					actx->len.text += plen;
-					sw_cpoly_decrypt = 1;
 				}
-				return len;
+				sw_cpoly_decrypt = 0;
 			}
+		} else if ((!enc) && sw_cpoly_decrypt) {
+			if (CRYPTO_memcmp(temp, actx->tag, actx->tag_len))
+				return -1;
+			sw_cpoly_decrypt = 0;
+
+		}
+		return len;
+	}
+	if ((in == NULL)) {
+		if ((!enc) && !sw_cpoly_decrypt) {
+			if (dpdk_ctx->auth_taglen < 0)
+				return -1;
+			memcpy(dpdk_ctx->auth_tag, EVP_CIPHER_CTX_buf_noconst(ctx),
+					E_DPDKCPT_CPOLY_AEAD_DIGEST_LEN);
+			return 0;
+		}
+		if ((enc) && (!sw_cpoly_encrypt)) {
+			memcpy(dpdk_ctx->auth_tag, EVP_CIPHER_CTX_buf_noconst(ctx),
+					E_DPDKCPT_CPOLY_AEAD_DIGEST_LEN);
+			dpdk_ctx->auth_taglen = E_DPDKCPT_CPOLY_AEAD_DIGEST_LEN;
+		}
+		return 0;
+	}
+
+	dpdk_ctx->ibuf = rte_pktmbuf_alloc(mbuf_pool);
+	if (dpdk_ctx->ibuf == NULL) {
+		engine_log(ENG_LOG_ERR, "Failed to create a mbuf: %d\n", __LINE__);
+		return -1;
+	}
+
+	/* Clear mbuf payload */
+	memset(rte_pktmbuf_mtod(dpdk_ctx->ibuf, uint8_t *), 0,
+			rte_pktmbuf_tailroom(dpdk_ctx->ibuf));
+
+	/* Create AEAD operation */
+	retval = create_crypto_operation(ctx, in, len, enc);
+	if (retval < 0)
+		return retval;
+
+        job = ASYNC_get_current_job();
+        if (job != NULL)
+                wctx_local = (ASYNC_WAIT_CTX *)ASYNC_get_wait_ctx(job);
+
+	rte_crypto_op_attach_sym_session(dpdk_ctx->op, dpdk_ctx->cry_session);
+	dpdk_ctx->op->sym->m_src = dpdk_ctx->ibuf;
+
+	status_ptr = rte_crypto_op_ctod_offset (dpdk_ctx->op,
+			ossl_cry_op_status_t *, E_DPDKCPT_COP_METADATA_OFF);
+
+	status_ptr->is_complete = 0;
+	status_ptr->is_successful = 0;
+        status_ptr->wctx_p = wctx_local;
+        status_ptr->numpipes = 1;
+
+	num_enqueued_ops =
+		rte_cryptodev_enqueue_burst(dpdk_ctx->dev_id,
+				sym_queues[rte_lcore_id()], &dpdk_ctx->op, 1);
+
+	if (num_enqueued_ops < 1) {
+		engine_log(ENG_LOG_ERR, "\nCrypto operation enqueue failed: %d\n", __LINE__);
+		return 0;
+	}
+
+        CPT_ATOMIC_INC(cpt_num_cipher_pipeline_requests_in_flight);
+        CPT_ATOMIC_INC(cpt_num_requests_in_flight);
+
+        pause_async_job();
+
+        CPT_ATOMIC_DEC(cpt_num_cipher_pipeline_requests_in_flight);
+        CPT_ATOMIC_DEC(cpt_num_requests_in_flight);
+
+	while (!status_ptr->is_complete) {
+
+		num_dequeued_ops = rte_cryptodev_dequeue_burst(
+			dpdk_ctx->dev_id, sym_queues[rte_lcore_id()], dequeued_ops, 1);
+
+		if (num_dequeued_ops > 0) {
+			new_st_ptr = rte_crypto_op_ctod_offset(
+				dequeued_ops[0], ossl_cry_op_status_t *,
+				E_DPDKCPT_COP_METADATA_OFF);
+
+			new_st_ptr->is_complete = 1;
+			if (dequeued_ops[0]->status != RTE_CRYPTO_OP_STATUS_SUCCESS) {
+				engine_log(ENG_LOG_ERR, "Operation were not processed"
+					"correctly err: %d", dequeued_ops[0]->status);
+				new_st_ptr->is_successful = 0;
+			} else {
+				new_st_ptr->is_successful = 1;
+
+                               if(new_st_ptr->wctx_p)
+                                   check_for_job_completion(new_st_ptr->wctx_p,
+                                                        status_ptr->wctx_p, status_ptr->numpipes,
+                                                          &pip_jb_qsz, &pip_jobs[0]);
+			}
+		}
+	}
+	mbuf = dpdk_ctx->op->sym->m_src;
+
+	if (!status_ptr->is_successful) {
+		rv = -1;
+		engine_log(ENG_LOG_ERR, "Job not process\n");
+		goto err;
+	}
+
+	void *buf = rte_pktmbuf_mtod_offset(mbuf, char *,
+				dpdk_ctx->op->sym[0].aead.data.offset);
+
+	memcpy(out, buf, len);
+	if (enc == 1) {
+		memcpy (EVP_CIPHER_CTX_buf_noconst(ctx),
+			dpdk_ctx->op->sym[0].aead.digest.data,
+			E_DPDKCPT_CPOLY_AEAD_DIGEST_LEN);
+		memcpy (dpdk_ctx->auth_tag, dpdk_ctx->op->sym[0].aead.digest.data,
+			E_DPDKCPT_CPOLY_AEAD_DIGEST_LEN);
+	}
+	rv = len;
+
+err:
+	rte_mempool_put_bulk(crypto_sym_op_pool, (void **)&dpdk_ctx->op, 1);
+	rte_pktmbuf_free(mbuf);
+
+	return rv;
+}
+
+static int dpdkcpt_chacha20_poly1305_crypto(EVP_CIPHER_CTX *ctx, unsigned char *out,
+	const unsigned char *in, size_t len)
+{
+	int retval, enc, rv = -1;
+	struct rte_mbuf *mbuf = NULL;
+	ossl_cry_op_status_t *status_ptr, *new_st_ptr;
+	uint16_t num_enqueued_ops, num_dequeued_ops;
+	struct rte_crypto_op *dequeued_ops[1];
+	struct ossl_dpdk_cpoly_ctx *dpdk_ctx = EVP_CIPHER_CTX_get_cipher_data(ctx);
+	EVP_CHACHA_AEAD_CTX *actx = dpdk_ctx->actx;
+	size_t rem, plen = actx->tls_payload_length;
+	static int sw_cpoly_encrypt = 0, sw_cpoly_decrypt = 0;
+
+	enc = EVP_CIPHER_CTX_encrypting(ctx);
+
+	if (in != NULL) {
+		if (len < dpdk_ctx->hw_offload_pkt_sz_threshold) {
+
+			if (!actx->mac_inited)
+				cpoly_mac_init(actx);
+			if (actx->aad) {                    /* wrap up aad */
+				if ((rem = (size_t)actx->len.aad % POLY1305_BLOCK_SIZE))
+					Poly1305_Update(POLY1305_ctx(actx), zero,
+							POLY1305_BLOCK_SIZE - rem);
+				actx->aad = 0;
+			}
+
+			actx->tls_payload_length = NO_TLS_PAYLOAD_LENGTH;
+			if (plen == NO_TLS_PAYLOAD_LENGTH)
+				plen = len;
+			else if (len != plen + POLY1305_BLOCK_SIZE)
+				return -1;
+
+			if (enc) {                 /* plaintext */
+				chacha_cipher(ctx, out, in, plen);
+				Poly1305_Update(POLY1305_ctx(actx), out, plen);
+				in += plen;
+				out += plen;
+				actx->len.text += plen;
+				sw_cpoly_encrypt = 1;
+			} else {                            /* ciphertext */
+				Poly1305_Update(POLY1305_ctx(actx), in, plen);
+				chacha_cipher(ctx, out, in, plen);
+				in += plen;
+				out += plen;
+				actx->len.text += plen;
+				sw_cpoly_decrypt = 1;
+			}
+			return len;
 		}
 
 	}
@@ -1195,9 +1478,8 @@ static int dpdkcpt_chacha20_poly1305_crypto(EVP_CIPHER_CTX *ctx, unsigned char *
 		return 0;
 	}
 
-
 	while (!status_ptr->is_complete) {
-		pause_async_job();
+                pause_async_job();
 
 		num_dequeued_ops = rte_cryptodev_dequeue_burst(
 			dpdk_ctx->dev_id, sym_queues[rte_lcore_id()], dequeued_ops, 1);
@@ -1214,6 +1496,7 @@ static int dpdkcpt_chacha20_poly1305_crypto(EVP_CIPHER_CTX *ctx, unsigned char *
 				new_st_ptr->is_successful = 0;
 			} else {
 				new_st_ptr->is_successful = 1;
+
 			}
 		}
 	}

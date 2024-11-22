@@ -25,6 +25,7 @@
 #include <evp_local.h>
 #endif
 
+#include <openssl/ssl.h>
 #include <rte_eal.h>
 #include <rte_mempool.h>
 #include <rte_malloc.h>
@@ -78,9 +79,11 @@ struct ossl_dpdk_ctx {
 	uint8_t iv_set:1;
 	uint8_t iv_gen:1;
 	GCM128_CONTEXT gcm;
+        /* Below member is for TLSv1.3 & crypto mode application */
 	int aad_len;
 	int taglen;
 	int ivlen;
+        /* Below member is for TLSv1.2 */
 	int tls_aad_len;
 	ctr128_f ctr;
 	int hw_offload_pkt_sz_threshold;
@@ -98,6 +101,7 @@ struct ossl_dpdk_ctx {
 	struct rte_mbuf *ibufs[SSL_MAX_PIPELINES];
 	uint32_t aad_cnt;
 	char aad_pipe[SSL_MAX_PIPELINES][TLS_HDR_SIZE];
+        uint8_t is_tlsv_1_3;
 };
 /* AES-GCM */
 static int dpdkcpt_aes128_gcm_init_key(EVP_CIPHER_CTX *ctx,
@@ -380,8 +384,7 @@ static int create_crypto_operation(EVP_CIPHER_CTX *ctx,
 				dpdk_ctx->ibuf,
 				plaintext_pad_len + aad_pad_len);
 
-			rte_memcpy(in + plaintext_pad_len + aad_pad_len, sym_op->aead.digest.data,
-				   EVP_GCM_TLS_TAG_LEN);
+			rte_memcpy(sym_op->aead.digest.data, in + len, EVP_GCM_TLS_TAG_LEN);
 		}
 		sym_op->aead.data.length = len;
 		sym_op->aead.data.offset = aad_pad_len;
@@ -804,6 +807,205 @@ err:
 	return rv;
 }
 
+static int tls13_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
+                             const unsigned char *in, size_t len)
+{
+        struct ossl_dpdk_ctx *dpdk_ctx = EVP_CIPHER_CTX_get_cipher_data(ctx);
+        struct rte_mbuf *mbuf = NULL;
+        int ret;
+        static uint8_t sw_encrypt = 0, sw_decrypt = 0;
+        int enc = EVP_CIPHER_CTX_encrypting(ctx);
+        ASYNC_JOB *job = NULL;
+        ASYNC_WAIT_CTX *wctx_local = NULL;
+        async_pipe_job_t pip_jobs[MAX_PIPE_JOBS];
+        uint8_t pip_jb_qsz = 0;
+
+        if (in != NULL) {
+                if (enc) {
+                        if (len < dpdk_ctx->hw_offload_pkt_sz_threshold) {
+                                if (CRYPTO_gcm128_encrypt_ctr32(&dpdk_ctx->gcm,
+                                                        in,
+                                                        out,
+                                                        len, dpdk_ctx->ctr)) {
+                                        dpdk_ctx->tls_aad_len = -1;
+                                        dpdk_ctx->aad_len = -1;
+                                        return -1;
+                                }
+                                sw_encrypt = 1;
+                                return len;
+                        }
+                } else {
+                        if (len < dpdk_ctx->hw_offload_pkt_sz_threshold) {
+                                if (CRYPTO_gcm128_decrypt_ctr32(&dpdk_ctx->gcm,
+                                                        in,
+                                                        out,
+                                                        len, dpdk_ctx->ctr)) {
+                                        dpdk_ctx->tls_aad_len = -1;
+                                        dpdk_ctx->aad_len = -1;
+                                        return -1;
+                                }
+                                sw_decrypt = 1;
+                                return len;
+                        }
+                }
+        } else {
+                if (!enc) {
+                        if (dpdk_ctx->taglen < 0)
+                                return -1;
+                        if (sw_decrypt) {
+                                ret = CRYPTO_gcm128_finish(&dpdk_ctx->gcm,
+                                                EVP_CIPHER_CTX_buf_noconst(ctx),
+                                                dpdk_ctx->taglen);
+                                if (ret != 0)
+                                        return -1;
+                                sw_decrypt = 0;
+                        }
+                        memcpy(dpdk_ctx->auth_tag,
+                                EVP_CIPHER_CTX_buf_noconst(ctx), 16);
+                        dpdk_ctx->iv_set = 0;
+                        return 0;
+                }
+                if (sw_encrypt) {
+                        CRYPTO_gcm128_tag(&dpdk_ctx->gcm,
+                                          EVP_CIPHER_CTX_buf_noconst(ctx), 16);
+                        sw_encrypt = 0;
+                }
+                memcpy(dpdk_ctx->auth_tag, EVP_CIPHER_CTX_buf_noconst(ctx), 16);
+                dpdk_ctx->taglen = 16;
+                /* Don't reuse the IV */
+                dpdk_ctx->iv_set = 0;
+                return 0;
+        }
+
+        if (dpdk_ctx->aad_len == -1) {
+                int ret = crypto_ctr_cipher(ctx, out, in, len);
+                return ret;
+        }
+        ossl_cry_op_status_t *status_curr_job;
+        int rv = -1;
+
+    /*
+     * Set IV from start of buffer or generate IV and write to start of
+     * buffer.
+     */
+        /* AAD data is stored in dpdk_ctx->aad */
+
+    /* Create crypto session and initialize it for the
+     * crypto device.
+     */
+        int retval;
+
+        dpdk_ctx->ibuf = rte_pktmbuf_alloc(mbuf_pool);
+
+        if (dpdk_ctx->ibuf == NULL) {
+                engine_log(ENG_LOG_ERR, "Failed to create a mbuf\n");
+                return -1;
+        }
+
+        job = ASYNC_get_current_job();
+        if (job != NULL)
+                wctx_local = (ASYNC_WAIT_CTX *)ASYNC_get_wait_ctx(job);
+
+        /* Create AEAD operation */
+        retval = create_crypto_operation(ctx, dpdk_ctx, in, len, enc);
+        if (retval < 0)
+                return retval;
+        rte_crypto_op_attach_sym_session(dpdk_ctx->op,
+                                         dpdk_ctx->aead_cry_session);
+
+        dpdk_ctx->op->sym->m_src = dpdk_ctx->ibuf;
+
+        status_curr_job =
+                rte_crypto_op_ctod_offset(dpdk_ctx->op, ossl_cry_op_status_t *,
+                                          E_DPDKCPT_COP_METADATA_OFF);
+
+        status_curr_job->is_complete = 0;
+        status_curr_job->is_successful = 0;
+        status_curr_job->wctx_p = wctx_local;
+        status_curr_job->numpipes = 1;
+
+        void *buf;
+        /* Enqueue this crypto operation in the crypto device. */
+        uint16_t num_enqueued_ops =
+                rte_cryptodev_enqueue_burst(dpdk_ctx->dev_id,
+                                sym_queues[rte_lcore_id()], &dpdk_ctx->op, 1);
+
+        if (num_enqueued_ops != 1) {
+                engine_log(ENG_LOG_ERR, "Crypto operation enqueue failed\n");
+                return 0;
+        }
+
+        CPT_ATOMIC_INC(cpt_num_cipher_pipeline_requests_in_flight);
+        CPT_ATOMIC_INC(cpt_num_requests_in_flight);
+
+        pause_async_job();
+
+        CPT_ATOMIC_DEC(cpt_num_cipher_pipeline_requests_in_flight);
+        CPT_ATOMIC_DEC(cpt_num_requests_in_flight);
+
+        uint16_t num_dequeued_ops;
+        struct rte_crypto_op *dequeued_ops[E_DPDKCPT_NUM_DEQUEUED_OPS];
+
+        while (!status_curr_job->is_complete) {
+
+                num_dequeued_ops =
+                        rte_cryptodev_dequeue_burst(dpdk_ctx->dev_id,
+                                                        sym_queues[rte_lcore_id()],
+                                                    dequeued_ops,
+                                                    E_DPDKCPT_NUM_DEQUEUED_OPS);
+
+                for (int j = 0; j < num_dequeued_ops; j++) {
+                        ossl_cry_op_status_t *status_of_job;
+                        status_of_job = rte_crypto_op_ctod_offset(
+                                dequeued_ops[j], ossl_cry_op_status_t *,
+                                E_DPDKCPT_COP_METADATA_OFF);
+
+                        status_of_job->is_complete = 1;
+                        /* Check if operation was processed successfully */
+                        if (dequeued_ops[j]->status !=
+                            RTE_CRYPTO_OP_STATUS_SUCCESS) {
+                        engine_log(ENG_LOG_ERR, "Crypto (GCM) op status is not success (err:%d)\n",
+                                       dequeued_ops[j]->status);
+                                status_of_job->is_successful = 0;
+                        } else {
+                                status_of_job->is_successful = 1;
+
+                                if(status_of_job->wctx_p)
+                                   check_for_job_completion(status_of_job->wctx_p,
+                                                        status_curr_job->wctx_p, status_of_job->numpipes,
+                                                          &pip_jb_qsz, &pip_jobs[0]);
+
+                        }
+                }
+        }
+
+        mbuf = dpdk_ctx->op->sym->m_src;
+
+        if (!status_curr_job->is_successful) {
+                rv = -1;
+                goto err;
+        }
+
+        buf = rte_pktmbuf_mtod_offset(mbuf, char *,
+                                      dpdk_ctx->op->sym[0].aead.data.offset);
+        memcpy(out, buf, len);
+        rv = len;
+        if (enc) {
+                memcpy(EVP_CIPHER_CTX_buf_noconst(ctx),
+                       dpdk_ctx->op->sym[0].aead.digest.data,
+                       EVP_GCM_TLS_TAG_LEN);
+                memcpy(dpdk_ctx->auth_tag,
+                       dpdk_ctx->op->sym[0].aead.digest.data,
+                       EVP_GCM_TLS_TAG_LEN);
+        }
+err:
+        rte_mempool_put_bulk(crypto_sym_op_pool, (void **)&dpdk_ctx->op, 1);
+        rte_pktmbuf_free(mbuf);
+        dpdk_ctx->tls_aad_len = -1;
+        dpdk_ctx->aad_len = -1;
+        return rv;
+}
+
 /*
  * Normal crypto application
  */
@@ -817,28 +1019,7 @@ static int crypto_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 	int enc = EVP_CIPHER_CTX_encrypting(ctx);
 
 	if (in != NULL) {
-		if (out == NULL) {
-			if (CRYPTO_gcm128_aad(&dpdk_ctx->gcm, in, len))
-				return -1;
-			dpdk_ctx->aad =  rte_malloc(NULL, sizeof(uint8_t) * len, 0);
-			if (!dpdk_ctx->aad)
-			{
-				engine_log(ENG_LOG_ERR, "AAD memory alloc failed\n");
-				return -1;
-			}
-			memcpy(dpdk_ctx->aad, in, len);
-			if ((size_t)dpdk_ctx->aad_len != len) {
-				ret = create_aead_session(RTE_CRYPTO_AEAD_AES_GCM,
-							dpdk_ctx, enc, len, 1);
-				if (ret < 0) {
-					engine_log(ENG_LOG_ERR, "Create aead session "
-							"failed\n");
-					return ret;
-				}
-				dpdk_ctx->aad_len = len;
-			}
-			return len;
-		} else if (enc) {
+		if (enc) {
 			if (len < dpdk_ctx->hw_offload_pkt_sz_threshold) {
 				if (CRYPTO_gcm128_encrypt_ctr32(&dpdk_ctx->gcm,
 							in,
@@ -1238,18 +1419,75 @@ skip_free_buf:
 	return ret;
 }
 
+static int aes_gcm_update_aad_create_aead_session (EVP_CIPHER_CTX *ctx, unsigned char *out,
+                             const unsigned char *in, size_t len)
+
+{
+	int ret;
+	uint16_t *tls_ver;
+	int enc = EVP_CIPHER_CTX_encrypting(ctx);
+	struct ossl_dpdk_ctx *dpdk_ctx = EVP_CIPHER_CTX_get_cipher_data(ctx);
+
+	tls_ver = (uint16_t *) (in+1);
+
+	if( *tls_ver>= TLS1_2_VERSION)
+		dpdk_ctx->is_tlsv_1_3 = 1;
+
+	if (CRYPTO_gcm128_aad(&dpdk_ctx->gcm, in, len))
+		return -1;
+	dpdk_ctx->aad =  rte_malloc(NULL, sizeof(uint8_t) * len, 0);
+	if (!dpdk_ctx->aad)
+	{
+		engine_log(ENG_LOG_ERR, "AAD memory alloc failed\n");
+		return -1;
+	}
+	memcpy(dpdk_ctx->aad, in, len);
+	if ((size_t)dpdk_ctx->aad_len != len) {
+		ret = create_aead_session(RTE_CRYPTO_AEAD_AES_GCM,
+				dpdk_ctx, enc, len, 1);
+		if (ret < 0) {
+			engine_log(ENG_LOG_ERR, "Create aead session "
+					"failed\n");
+			return ret;
+		}
+		dpdk_ctx->aad_len = len;
+	}
+	return len;
+}
+
 int dpdkcpt_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 			   const unsigned char *in, size_t len)
 {
+        int ret;
 	struct ossl_dpdk_ctx *dpdk_ctx = EVP_CIPHER_CTX_get_cipher_data(ctx);
+
 	/* If not set up, return error */
 	if (!dpdk_ctx->key_set)
 		return -1;
+
+        /*
+         * Handles all the cipher calls for TLS application mode where
+         * TLS version is < TLS 1.3
+         */
 	if (dpdk_ctx->tls_aad_len >= 0)
 		return aes_gcm_tls_cipher(ctx, out, in, len);
+
 	if (!dpdk_ctx->iv_set)
 		return -1;
-	int ret = crypto_gcm_cipher(ctx, out, in, len);
+
+	if (in != NULL && out == NULL)
+		return aes_gcm_update_aad_create_aead_session(ctx, out,
+				in, len);
+
+        /*
+         * Handles all the cipher calls for TLS application mode where
+         * TLS version is TLS 1.3
+         */
+	if (dpdk_ctx->is_tlsv_1_3)
+		return tls13_gcm_cipher(ctx, out, in, len);
+
+        /* Handles all the cipher calls for crypto mode applications */
+	ret = crypto_gcm_cipher(ctx, out, in, len);
 	if (ret < 0)
 		return -1;
 	return ret;
