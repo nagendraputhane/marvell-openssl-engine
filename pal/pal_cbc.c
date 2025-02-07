@@ -54,7 +54,7 @@ int pal_aes_cbc_cipher(pal_cbc_ctx_t *pal_ctx, unsigned char *out,
   for (i = 0; i < numpipes; i++) {
     if (pal_ctx->input_len[i] < PAL_AES_CBC_IV_LENGTH) {
       engine_log (ENG_LOG_ERR, "Invalid input length\n");
-      ret = 0;
+      ret = -1;
       goto free_resources;
     }
     // For decrytion, save the last iv_len bytes of ciphertext as next IV.

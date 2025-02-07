@@ -31,13 +31,15 @@
 
   openssl-engine-dpdk
       | \|
-      | \|---.c
+      | \|---openssl_engine/
       | \|      (engine sources)
+      | \|---pal/
+      | \|      (crypto sources)
       | \|---patches/
       | \|      (contain patches to be applied on dependent sources)
       | \|---scripts/
       | \|      (contain board setup scripts)
-      | \|---doc/
+      | \|---doc/openssl_engine
       | \|      (contain README.txt and openssl.cnf)
 
 03. Supported Platforms
@@ -54,7 +56,7 @@ I) Dependencies
 
   | a) SDK : Base SDK, engine release supported with. See Release Notes.
   | b) DPDK : Provided in SDK package (Supported versions: 20.11, 21.11, 22.11, 23.11)
-  | c) OpenSSL : openssl-1.1.1q
+  | c) OpenSSL : openssl-3.3.3
   | d) Require ninja, meson utilities.
 
   The SDK is not used on the Intel X86 platform and is optional
@@ -94,11 +96,11 @@ II) Building and Running Instructions
 
     b) Building OpenSSL
 
-        Cross compile openssl-1.1.1q.tar.gz package:
+        Cross compile openssl-3.3.2.tar.gz package:
 
-        # tar -zxf openssl-1.1.1q.tar.gz
+        # tar -zxf openssl-3.3.2.tar.gz
 
-        # cd openssl-1.1.1q
+        # cd openssl-3.3.2
 
         # ./Configure linux-aarch64 --cross-compile-prefix= <TOOLCHAIN_PATH>/aarch64-marvell-linux-gnu-
 
@@ -263,7 +265,7 @@ IV) Supported Features
     iv.  NIST P-384
     v.   NIST P-521
 
-  f) Support Chacha20-poly1305 cipher on OCTEONTX2 96XX(rev:C0) and 98XX.
+  f) Support Chacha20-poly1305 cipher.
   g) OpenSSL pipeline feature - allows submission of batch requests to dpdk layer.
 
 04. Testing DPDK based Openssl

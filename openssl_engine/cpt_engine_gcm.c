@@ -652,7 +652,10 @@ int cpt_engine_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
          */
         ret = pal_aes_gcm_tls_cipher(pal_ctx, buf, (void*)ctx, wctx);
         gcm_ctx->iv_set = 0;
-        return ret;
+        if (ret < 0)
+            return -1;
+        else
+           return 1;
     }
 
     if (!gcm_ctx->iv_set)

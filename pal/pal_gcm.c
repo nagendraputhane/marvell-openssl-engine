@@ -117,11 +117,17 @@ static int create_crypto_operation_pl(pal_gcm_ctx_t *pal_ctx,
 	return 0;
 }
 
-/*
- * TLS application case
+/* Below API added for TLS1_2 protocol
+ *
+ * AAD data is alway set via control function in case of TLS1_2
+ * IV is updating by XOR'ing with sequence number
+ * Here, len value is comming from SSL layer is equal to
+ * (PT/CT length + AUTH tag len) for both encryption/decryption.
+ *
+ * Return: correct outlen on success, <0 on failure
  */
 int pal_aes_gcm_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *buf,
-		                       void *usr_ctx, void *wctx)
+                               void *usr_ctx, void *wctx)
 {
 	int ret;
 	uint8_t pip_jb_qsz = 0;
@@ -242,11 +248,16 @@ int pal_aes_gcm_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *buf,
 				pal_ctx->ops[i]->sym[0].aead.digest.data, pal_ctx->tls_tag_len);
 		rte_pktmbuf_free(pal_ctx->ops[i]->sym->m_src);
 		pal_ctx->ops[i]->sym->m_src = NULL;
+
+        if (pal_ctx->enc)
+            ret =  pal_ctx->input_len[i] + pal_ctx->tls_exp_iv_len + pal_ctx->tls_tag_len;
+        else
+            ret = pal_ctx->input_len[i];
+
 	}
 	rte_mempool_put_bulk(pools->sym_op_pool, (void **)pal_ctx->ops, numpipes);
 	for (j = 0; j < numpipes; j++)
 		pal_ctx->ops[j] = NULL;
-	ret = 1;
 free_resources:
 	if (unlikely(ret < 0)) {
 		for (i = 0; i < numalloc; i++) {

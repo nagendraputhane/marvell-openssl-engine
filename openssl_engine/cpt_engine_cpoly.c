@@ -685,8 +685,8 @@ cpt_engine_chacha20_poly1305_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     ret = pal_chacha20_poly1305_tls_cipher(pal_ctx, out, in, len, queue, wctx);
     if (ret < 0)
         return -1;
-
-    return ret;
+    else
+        return 1;
   }
 
   if (in != NULL && out == NULL)

@@ -129,10 +129,12 @@ static int create_crypto_operation_pl(pal_cpoly_ctx_t *pal_ctx,
  * AAD data is alway set via control function in case of TLS1_2
  * IV is updating by XOR'ing with sequence number
  * Here, len value is comming from SSL layer is equal to
- * (PT/CT length + AUTH tag len) for both encryption/decryption.*/
+ * (PT/CT length + AUTH tag len) for both encryption/decryption.
+ * @returns correct outlen on success, <0 on failure
+*/
 
 int pal_chacha20_poly1305_tls_cipher(pal_cpoly_ctx_t *pal_ctx, unsigned char *out,
-	const unsigned char *in, size_t len, int sym_queue, void *wctx)
+        const unsigned char *in, size_t len, int sym_queue, void *wctx)
 {
 	int enc;
 	uint8_t pip_jb_qsz = 0;
@@ -247,12 +249,17 @@ int pal_chacha20_poly1305_tls_cipher(pal_cpoly_ctx_t *pal_ctx, unsigned char *ou
 				pal_ctx->tls_tag_len);
 		rte_pktmbuf_free(pal_ctx->ops[i]->sym->m_src);
 		pal_ctx->ops[i]->sym->m_src = NULL;
+
+        if (pal_ctx->enc)
+            ret =  pal_ctx->input_len[i] + pal_ctx->tls_tag_len;
+        else
+            ret = pal_ctx->input_len[i];
+
 	}
 	rte_mempool_put_bulk(pools->sym_op_pool, (void **)pal_ctx->ops,
 			     numpipes);
 	for (int j = 0; j < numpipes; j++)
 		pal_ctx->ops[j] = NULL;
-	ret = 1;
 free_resources:
 	if (unlikely(ret < 0)) {
 		for (i = 0; i < numalloc; i++) {

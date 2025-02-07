@@ -45,9 +45,9 @@ typedef struct pal_rsa_ctx {
   uint8_t *wctx_p;
 } pal_rsa_ctx_t;
 
-int pal_dpdk_rsa_pub_enc(pal_rsa_ctx_t *pal_ctx, int flen, const unsigned char *from, unsigned char *to);
-int pal_dpdk_rsa_pub_dec(pal_rsa_ctx_t *pal_ctx, int flen, const unsigned char *from, unsigned char *to);
-int pal_dpdk_rsa_priv_enc(pal_rsa_ctx_t *pal_ctx, int flen, const unsigned char *from, unsigned char *to);
-int pal_dpdk_rsa_priv_dec(pal_rsa_ctx_t *pal_ctx, int flen, const unsigned char *from, unsigned char *to);
+int pal_rsa_pub_enc(pal_rsa_ctx_t *pal_ctx, int flen, const unsigned char *from, unsigned char *to);
+int pal_rsa_pub_dec(pal_rsa_ctx_t *pal_ctx, int flen, const unsigned char *from, unsigned char *to);
+int pal_rsa_priv_enc(pal_rsa_ctx_t *pal_ctx, int flen, const unsigned char *from, unsigned char *to);
+int pal_rsa_priv_dec(pal_rsa_ctx_t *pal_ctx, int flen, const unsigned char *from, unsigned char *to);
 int pal_asym_xform_capability_check_modlen(int16_t modlen);
 #endif //_E_PAL_DPDK_RSA_H

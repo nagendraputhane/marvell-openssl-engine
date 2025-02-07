@@ -126,8 +126,17 @@ void setup_crt_priv_op_xform(struct rte_crypto_asym_xform *rsa_xform, pal_rsa_ct
   rsa_xform->rsa.qt.qInv.length = pal_ctx->rsa_qt_qInv_len;
 }
 
-/* Private encryption */
-int pal_dpdk_rsa_priv_enc(pal_rsa_ctx_t *pal_ctx, int flen,
+/*
+ * API Description: Performs RSA private encryption.
+ *
+ * pal_rsa_ctx_t *pal_ctx: RSA context.
+ * int flen: Length of input data.
+ * const unsigned char *from: Input data.
+ * unsigned char *to: Buffer for encrypted output.
+ *
+ * Return Value: Length of encrypted data on success, -1 on failure.
+ */
+int pal_rsa_priv_enc(pal_rsa_ctx_t *pal_ctx, int flen,
     const unsigned char *from, unsigned char *to)
 {
 	struct rte_cryptodev_asym_session *sess = NULL;
@@ -200,11 +209,15 @@ int pal_dpdk_rsa_priv_enc(pal_rsa_ctx_t *pal_ctx, int flen,
 	/* Enqueue and Dequeue operations */
 	if (unlikely(queue_ops(cry_op, pal_ctx) < 0))
 		ret = -1;
+        else
+           ret = asym_op->rsa.sign.length;
+
 	asym_sess_destroy(sess, pal_ctx->dev_id);
 	rte_crypto_op_free(cry_op);
 
 	return ret;
 }
+
 static inline void
 setup_non_crt_pub_op_xform(struct rte_crypto_asym_xform *rsa_xform,
                            pal_rsa_ctx_t *pal_ctx)
@@ -223,8 +236,17 @@ setup_non_crt_pub_op_xform(struct rte_crypto_asym_xform *rsa_xform,
    rsa_xform->xform_type = RTE_CRYPTO_ASYM_XFORM_RSA;
 }
 
-/* Public decryption */
-int pal_dpdk_rsa_pub_dec(pal_rsa_ctx_t *pal_ctx, int flen,
+/*
+ * API Description: Performs RSA Public decryption.
+ *
+ * pal_rsa_ctx_t *pal_ctx: RSA context.
+ * int flen: Length of input data.
+ * const unsigned char *from: Input data.
+ * unsigned char *to: Buffer for encrypted output.
+ *
+ * Return Value: Length of decrypted data on success, -1 on failure.
+ */
+int pal_rsa_pub_dec(pal_rsa_ctx_t *pal_ctx, int flen,
     const unsigned char *from, unsigned char *to)
 {
 	struct rte_crypto_asym_xform *rsa_xform = NULL;
@@ -307,8 +329,17 @@ int pal_dpdk_rsa_pub_dec(pal_rsa_ctx_t *pal_ctx, int flen,
 	return ret;
 }
 
-/* public encryption*/
-int pal_dpdk_rsa_pub_enc(pal_rsa_ctx_t *pal_ctx, int flen,
+/*
+ * API Description: Performs RSA Public encryption.
+ *
+ * pal_rsa_ctx_t *pal_ctx: RSA context.
+ * int flen: Length of input data.
+ * const unsigned char *from: Input data.
+ * unsigned char *to: Buffer for encrypted output.
+ *
+ * Return Value: 1 on success, -1 on failure.
+ */
+int pal_rsa_pub_enc(pal_rsa_ctx_t *pal_ctx, int flen,
     const unsigned char *from, unsigned char *to)
 {
 	struct rte_crypto_asym_xform *rsa_xform = NULL;
@@ -384,8 +415,18 @@ int pal_dpdk_rsa_pub_enc(pal_rsa_ctx_t *pal_ctx, int flen,
 	return ret;
 }
 
-/* Private decryption */
-int pal_dpdk_rsa_priv_dec(pal_rsa_ctx_t *pal_ctx, int flen,
+/*
+ * API Description: Performs RSA Private decryption.
+ *
+ * pal_rsa_ctx_t *pal_ctx: RSA context.
+ * int flen: Length of input data.
+ * const unsigned char *from: Input data.
+ * unsigned char *to: Buffer for encrypted output.
+ *
+ * Return Value: Length of decrypted data on success, -1 on failure.
+ */
+
+int pal_rsa_priv_dec(pal_rsa_ctx_t *pal_ctx, int flen,
     const unsigned char *from, unsigned char *to)
 {
 	struct rte_crypto_asym_xform *rsa_xform = NULL;

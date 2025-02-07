@@ -31,6 +31,7 @@
 #include "pal_openssl.h"
 #endif
 
+#define OCTEON_CACHE_LINE_SIZE 128
 #define SSL_MAX_PIPELINES	32
 #define  EVP_AEAD_TLS1_AAD_LEN    13
 #define MAX_DEQUEUE_OPS           32

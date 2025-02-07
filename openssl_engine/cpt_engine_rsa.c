@@ -245,7 +245,7 @@ priv_enc_start:
   populate_default_params(pal_ctx, padding,dev_id,
       asym_queues[thread_id], ossl_handle_async_job);
 
-  ret = pal_dpdk_rsa_priv_enc(&pal_ctx, flen, from, to);
+  ret = pal_rsa_priv_enc(&pal_ctx, flen, from, to);
 
   if (pal_ctx.rsa_n_data)
     pal_free(pal_ctx.rsa_n_data);
@@ -307,7 +307,7 @@ int cpt_engine_rsa_pub_dec(int flen, const unsigned char *from, unsigned char *t
 
 	setup_non_crt_pub_op_xform(&pal_ctx, rsa);
 
-  ret = pal_dpdk_rsa_pub_dec(&pal_ctx, flen, from, to);
+  ret = pal_rsa_pub_dec(&pal_ctx, flen, from, to);
 
   if (pal_ctx.rsa_n_data)
     pal_free(pal_ctx.rsa_n_data);
@@ -349,7 +349,7 @@ int cpt_engine_rsa_pub_enc(int flen, const unsigned char *from, unsigned char *t
 
 	setup_non_crt_pub_op_xform(&pal_ctx, rsa);
 
-  ret = pal_dpdk_rsa_pub_enc(&pal_ctx, flen, from, to);
+  ret = pal_rsa_pub_enc(&pal_ctx, flen, from, to);
 
   ret = ret < 0 ? ret : RSA_size(rsa);
 
@@ -393,7 +393,7 @@ int cpt_engine_rsa_priv_dec(int flen, const unsigned char *from, unsigned char *
 
   setup_crt_priv_op_xform(&pal_ctx, rsa);
 
-  ret = pal_dpdk_rsa_priv_dec(&pal_ctx, flen, from, to);
+  ret = pal_rsa_priv_dec(&pal_ctx, flen, from, to);
 
  if (pal_ctx.rsa_n_data)
     pal_free(pal_ctx.rsa_n_data);
