@@ -191,7 +191,7 @@ III) Setting up board to run Openssl Engine
   all the testing and benchmarking commands mentioned in sections (4) and (5)
   of this README can now be run directly from any directory, for example
 
-          openssl speed -engine dpdk_engine -elapsed rsa2048
+          openssl speed -elapsed rsa2048
 
   b) Setting up openssl engine in 'Standalone' release mode
 
@@ -288,7 +288,7 @@ IV) Supported Features
 
   b) Run OpenSSL s_server with engine
 
-    # openssl s_server -engine dpdk_engine -cert <CertificateFile> -key <KeyFile> -port 4433
+    # openssl s_server -cert <CertificateFile> -key <KeyFile> -port 4433
 
   c) Run OpenSSL s_client on peer machine to connect to s_server running
      on the board
@@ -327,60 +327,60 @@ IV) Supported Features
 
   a) Benchmark RSA
 
-    # openssl speed -engine dpdk_engine -elapsed rsa2048
+    # openssl speed -elapsed rsa2048
 
   b) Benchmark RSA async mode
 
-    # openssl speed -engine dpdk_engine -async_jobs +26 -elapsed rsa2048
+    # openssl speed -async_jobs +26 -elapsed rsa2048
 
   c) Benchmark ECDSA on nistp256
 
-    # openssl speed -engine dpdk_engine -elapsed ecdsap256
+    # openssl speed -elapsed ecdsap256
 
   d) Benchmark ECDSA on nistp256 in async mode
 
-    # openssl speed -engine dpdk_engine -async_jobs +8 -elapsed ecdsap256
+    # openssl speed -async_jobs +8 -elapsed ecdsap256
 
   e) Benchmark ECDH on nistp256
 
-    # openssl speed -engine dpdk_engine -elapsed ecdhp256
+    # openssl speed -elapsed ecdhp256
 
   f) Benchmark ECDH on nistp256 in async mode
 
-    # openssl speed -engine dpdk_engine -async_jobs +8 -elapsed ecdhp256
+    # openssl speed -async_jobs +8 -elapsed ecdhp256
 
   g) Benchmark AES-128-CBC
 
-    # openssl speed -engine dpdk_engine -elapsed -evp aes-128-cbc
+    # openssl speed -elapsed -evp aes-128-cbc
 
   h) Benchmark AES-128-CBC async mode
 
-    # openssl speed -engine dpdk_engine -elapsed -async_jobs +24 -evp aes-128-cbc
+    # openssl speed -elapsed -async_jobs +24 -evp aes-128-cbc
 
   i) Benchmark AES-128-GCM
 
-    # openssl speed -engine dpdk_engine -elapsed -evp aes-128-gcm
+    # openssl speed -elapsed -evp aes-128-gcm
 
   j) Benchmark AES-128-GCM async mode
 
-    # openssl speed -engine dpdk_engine -elapsed -async_jobs +24 -evp aes-128-gcm
+    # openssl speed -elapsed -async_jobs +24 -evp aes-128-gcm
 
   k) Benchmark CHACHA20-POLY1305 async mode
 
-    # openssl speed -engine dpdk_engine -elapsed -async_jobs +24 -evp
+    # openssl speed -elapsed -async_jobs +24 -evp
     # 	chacha20-poly1305
 
   l) Running openssl speed with -multi option
 
     Example for speed command with -multi option for RSA:
 
-    # openssl speed -engine dpdk_engine -multi 18 -async_jobs +26 -elapsed rsa2048
+    # openssl speed -multi 18 -async_jobs +26 -elapsed rsa2048
 
    m) Benchmark AES-CBC-HMAC-SHA1 in async mode
 
-    # openssl speed -engine dpdk_engine -elapsed -async_jobs +24 -evp aes-128-cbc-hmac-sha1
+    # openssl speed -elapsed -async_jobs +24 -evp aes-128-cbc-hmac-sha1
 
-    # openssl speed -engine dpdk_engine -elapsed -async_jobs +24 -evp aes-256-cbc-hmac-sha1
+    # openssl speed -elapsed -async_jobs +24 -evp aes-256-cbc-hmac-sha1
 
 
 06.  Notes
