@@ -524,56 +524,61 @@ cpt_engine_crypto_gcm_non_tls_cipher(ossl_gcm_ctx_t *gcm_ctx, unsigned char *out
 int cpt_engine_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 			   const unsigned char *in, size_t len)
 {
-  int ret = 0;
-	ASYNC_JOB *job = NULL;
-	ASYNC_WAIT_CTX *wctx = NULL;
-  int queue = sym_queues[pal_get_thread_id()];
-  unsigned char *buf = EVP_CIPHER_CTX_buf_noconst(ctx);
-	ossl_gcm_ctx_t *gcm_ctx = EVP_CIPHER_CTX_get_cipher_data(ctx);
-  pal_gcm_ctx_t *pal_ctx = &gcm_ctx->pal_ctx;
-	uint16_t datalen = (uint16_t)(len - EVP_GCM_TLS_EXPLICIT_IV_LEN - EVP_GCM_TLS_TAG_LEN);
+    int ret = 0;
+    ASYNC_JOB *job = NULL;
+    ASYNC_WAIT_CTX *wctx = NULL;
+    int queue = sym_queues[pal_get_thread_id()];
+    unsigned char *buf = EVP_CIPHER_CTX_buf_noconst(ctx);
+    ossl_gcm_ctx_t *gcm_ctx = EVP_CIPHER_CTX_get_cipher_data(ctx);
+    pal_gcm_ctx_t *pal_ctx = &gcm_ctx->pal_ctx;
+    uint16_t datalen = (uint16_t)(len - EVP_GCM_TLS_EXPLICIT_IV_LEN - EVP_GCM_TLS_TAG_LEN);
 
-	/* If not set up, return error */
-	if (!gcm_ctx->key_set)
-		return -1;
+    /* If not set up, return error */
+    if (!gcm_ctx->key_set)
+        return -1;
 
-  pal_ctx->enc = EVP_CIPHER_CTX_encrypting(ctx);
-  pal_ctx->sym_queue = queue;
-	job = ASYNC_get_current_job();
-	if (job != NULL)
-		wctx = (ASYNC_WAIT_CTX *)ASYNC_get_wait_ctx(job);
+    pal_ctx->enc = EVP_CIPHER_CTX_encrypting(ctx);
+    pal_ctx->sym_queue = queue;
+    job = ASYNC_get_current_job();
+    if (job != NULL)
+        wctx = (ASYNC_WAIT_CTX *)ASYNC_get_wait_ctx(job);
 
-	/* Encrypt/decrypt must be performed in place */
-	if (out != in ||
-			len < (pal_ctx->tls_exp_iv_len + pal_ctx->tls_tag_len))
-		return -1;
+    if (pal_ctx->tls_aad_len >= 0) {
+        /* Bydefault number of pipe is one */
+        if (pal_ctx->numpipes == 0) {
+            pal_ctx->numpipes = 1;
+            pal_ctx->input_buf = (uint8_t **)&in;
+            pal_ctx->output_buf = &out;
+            pal_ctx->input_len = &len;
+        }
 
-	if (pal_ctx->tls_aad_len >= 0) {
-		/* Bydefault number of pipe is one */
-		if (pal_ctx->numpipes == 0) {
-			pal_ctx->numpipes = 1;
-			pal_ctx->input_buf = (uint8_t **)&in;
-			pal_ctx->output_buf = &out;
-			pal_ctx->input_len = &len;
-		}
+        /* Encrypt/decrypt must be performed in place */
+        if (out != in ||
+                len < (pal_ctx->tls_exp_iv_len + pal_ctx->tls_tag_len))
+            return -1;
 
-		if ((datalen < pal_ctx->hw_off_pkt_sz_thrsh) && (pal_ctx->numpipes == 1)) {
-			ret = cpt_engine_sw_aes_gcm_tls_cipher(gcm_ctx, out, in, len, buf,
-					ctx);
-			if (ret < 0)
-				return -1;
-		}
+        if ((datalen < pal_ctx->hw_off_pkt_sz_thrsh) && (pal_ctx->numpipes == 1)) {
+            ret = cpt_engine_sw_aes_gcm_tls_cipher(gcm_ctx, out, in, len, buf,
+                    ctx);
+            if (ret < 0)
+                return -1;
+        }
 
-		ret = pal_aes_gcm_tls_cipher(pal_ctx, buf, (void*)ctx, wctx);
-		gcm_ctx->iv_set = 0;
-		return ret;
-	}
+        ret = pal_aes_gcm_tls_cipher(pal_ctx, buf, (void*)ctx, wctx);
+        gcm_ctx->iv_set = 0;
+        return ret;
+    }
 
-	if (!gcm_ctx->iv_set)
-		return -1;
+    if (!gcm_ctx->iv_set)
+        return -1;
 
-  ret = cpt_engine_crypto_gcm_non_tls_cipher(gcm_ctx, out, in, len, buf);
-	return ret;
+    ret = cpt_engine_crypto_gcm_non_tls_cipher(gcm_ctx, out, in, len, buf);
+    if (ret < 0)
+        return -1;
+    else
+        ret = 1;
+
+    return ret;
 }
 
 int cpt_engine_aes_gcm_cleanup(EVP_CIPHER_CTX *ctx)

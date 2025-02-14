@@ -15,7 +15,7 @@
 #include <openssl/aes.h>
 #include <openssl/crypto.h>
 #if OPENSSL_API_LEVEL >= 30000
-#include <openssl/modes.h>
+#include <crypto/modes.h>
 #include <openssl/evp.h>
 #else
 #include <modes_local.h>
