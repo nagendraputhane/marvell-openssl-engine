@@ -29,6 +29,7 @@ typedef struct {
 typedef struct ossl_cpoly_ctx {
 	EVP_CHACHA_AEAD_CTX *actx;
   pal_cpoly_ctx_t pal_ctx;
+  uint8_t is_tlsv_1_3;
 }ossl_cpoly_ctx_t;
 
 #endif /* _CPT_ENGINE_CPOLY_H */

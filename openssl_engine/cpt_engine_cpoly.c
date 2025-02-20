@@ -476,8 +476,8 @@ static inline void cpoly_mac_init(EVP_CHACHA_AEAD_CTX *actx)
 }
 
 static inline int
-cpt_engine_chacha20_poly1305_non_tls_crypto(ossl_cpoly_ctx_t *cpolly_ctx, unsigned char *out,
-	const unsigned char *in, size_t len, int sym_queue, unsigned char *buf)
+cpt_engine_chacha20_poly1305_both_crypto_tls_1_3(ossl_cpoly_ctx_t *cpolly_ctx, unsigned char *out,
+	const unsigned char *in, size_t len, int sym_queue, unsigned char *buf, ASYNC_WAIT_CTX *wctx )
 {
   static int sw_cpoly_encrypt = 0, sw_cpoly_decrypt = 0;
 	EVP_CHACHA_AEAD_CTX *actx = cpolly_ctx->actx;
@@ -486,22 +486,6 @@ cpt_engine_chacha20_poly1305_non_tls_crypto(ossl_cpoly_ctx_t *cpolly_ctx, unsign
 	int enc = pal_ctx->enc;
 
   if (in != NULL) {
-    if (out == NULL) {
-      if (!actx->mac_inited)
-        cpoly_mac_init(actx);
-      Poly1305_Update(POLY1305_ctx(actx), in, len);
-      actx->len.aad += len;
-      actx->aad = 1;
-
-      memcpy(pal_ctx->aad, in, len);
-      if (((size_t)pal_ctx->aad_len != len)) {
-        int ret = pal_create_cpoly_aead_session(pal_ctx, len, 1);
-        if (ret < 0)
-          return ret;
-        pal_ctx->aad_len = len;
-      }
-      return len;
-    } else {                                /* plain- or ciphertext */
       if (len < pal_ctx->hw_offload_pkt_sz_threshold) {
 
         if (!actx->mac_inited)
@@ -536,8 +520,6 @@ cpt_engine_chacha20_poly1305_non_tls_crypto(ossl_cpoly_ctx_t *cpolly_ctx, unsign
         }
         return len;
       }
-    }
-
   }
   if (((in == NULL) || (plen != len)) && (sw_cpoly_decrypt || sw_cpoly_encrypt)) {
     const union {
@@ -625,7 +607,40 @@ cpt_engine_chacha20_poly1305_non_tls_crypto(ossl_cpoly_ctx_t *cpolly_ctx, unsign
     return 0;
   }
 
-  return pal_chacha20_poly1305_non_tls_crypto(pal_ctx, out, in, len, sym_queue, buf);
+  if(cpolly_ctx->is_tlsv_1_3)
+    return pal_chacha20_poly1305_tls_1_3_crypto(pal_ctx, out, in, len, sym_queue, buf, wctx);
+  else
+     return pal_chacha20_poly1305_non_tls_crypto(pal_ctx, out, in, len, sym_queue, buf);
+}
+
+static inline int
+cpoly_update_aad_create_aead_session(ossl_cpoly_ctx_t *cpolly_ctx, const unsigned char *in,
+                                size_t len)
+{
+     int ret;
+     uint16_t *tls_ver;
+     EVP_CHACHA_AEAD_CTX *actx = cpolly_ctx->actx;
+     pal_cpoly_ctx_t *pal_ctx = &cpolly_ctx->pal_ctx;
+
+      if (!actx->mac_inited)
+        cpoly_mac_init(actx);
+
+      Poly1305_Update(POLY1305_ctx(actx), in, len);
+      actx->len.aad += len;
+      actx->aad = 1;
+      tls_ver = (uint16_t *) (in+1);
+
+    if( *tls_ver>= TLS1_2_VERSION)
+    cpolly_ctx->is_tlsv_1_3 = 1;
+
+      memcpy(pal_ctx->aad, in, len);
+      if (((size_t)pal_ctx->aad_len != len)) {
+        int ret = pal_create_cpoly_aead_session(pal_ctx, len, 1);
+        if (ret < 0)
+          return ret;
+        pal_ctx->aad_len = len;
+      }
+      return len;
 }
 
 static int
@@ -668,9 +683,16 @@ cpt_engine_chacha20_poly1305_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     }
 
     ret = pal_chacha20_poly1305_tls_cipher(pal_ctx, out, in, len, queue, wctx);
+    if (ret < 0)
+        return -1;
+
+    return ret;
   }
-	else
-		ret = cpt_engine_chacha20_poly1305_non_tls_crypto(cpolly_ctx, out, in, len, queue, buf);
+
+  if (in != NULL && out == NULL)
+         return cpoly_update_aad_create_aead_session(cpolly_ctx, in, len);
+
+    ret = cpt_engine_chacha20_poly1305_both_crypto_tls_1_3(cpolly_ctx, out, in, len, queue, buf, wctx);
 
 	if (ret < 0)
 		return -1;

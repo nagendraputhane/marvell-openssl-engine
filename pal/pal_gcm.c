@@ -350,9 +350,7 @@ static int create_crypto_operation(pal_gcm_ctx_t *pal_ctx,
 			sym_op->aead.digest.phys_addr = rte_pktmbuf_iova_offset(
 				pal_ctx->ibuf,
 				plaintext_pad_len + aad_pad_len);
-
-			rte_memcpy(in + plaintext_pad_len + aad_pad_len, sym_op->aead.digest.data,
-				   pal_ctx->tls_tag_len);
+                        rte_memcpy(sym_op->aead.digest.data, in + len, pal_ctx->tls_tag_len);
 		}
 		sym_op->aead.data.length = len;
 		sym_op->aead.data.offset = aad_pad_len;
@@ -588,4 +586,133 @@ err:
 	pal_ctx->tls_aad_len = -1;
 	pal_ctx->aad_len = -1;
 	return rv;
+}
+
+int pal_crypto_gcm_tls_1_3_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
+                                        const unsigned char *in, size_t len,
+                                  unsigned char *buf, void *wctx)
+{
+    int ret;
+    struct rte_mbuf *mbuf = NULL;
+	uint8_t pip_jb_qsz = 0;
+	async_pipe_job_t pip_jobs[MAX_PIPE_JOBS];
+
+    if (pal_ctx->aad_len == -1) {
+        int ret = crypto_ctr_cipher(pal_ctx, out, in, len, buf);
+        return ret;
+    }
+
+    pal_cry_op_status_t *status_curr_job;
+    int rv = -1;
+    /*
+   * Set IV from start of buffer or generate IV and write to start of
+   * buffer.
+   */
+    /* AAD data is stored in pal_ctx->aad */
+
+    /* Create crypto session and initialize it for the
+   * crypto device.
+   */
+    int retval;
+
+    pal_ctx->ibuf = rte_pktmbuf_alloc(pools->mbuf_pool);
+
+    if (pal_ctx->ibuf == NULL) {
+        engine_log(ENG_LOG_ERR, "Failed to create a mbuf\n");
+        return -1;
+    }
+
+    /* Create AEAD operation */
+    retval = create_crypto_operation(pal_ctx, in, len, buf);
+    if (retval < 0)
+        return retval;
+    rte_crypto_op_attach_sym_session(pal_ctx->op,
+                     pal_ctx->aead_cry_session);
+
+    pal_ctx->op->sym->m_src = pal_ctx->ibuf;
+
+    status_curr_job =
+        rte_crypto_op_ctod_offset(pal_ctx->op, pal_cry_op_status_t *,
+                      PAL_COP_METADATA_OFF);
+
+    status_curr_job->is_complete = 0;
+    status_curr_job->is_successful = 0;
+    status_curr_job->wctx_p = wctx;
+    status_curr_job->numpipes = 1;
+
+    void *dbuf;
+    /* Enqueue this crypto operation in the crypto device. */
+    uint16_t num_enqueued_ops =
+        rte_cryptodev_enqueue_burst(pal_ctx->dev_id, pal_ctx->sym_queue, &pal_ctx->op, 1);
+
+    if (num_enqueued_ops != 1) {
+        engine_log(ENG_LOG_ERR, "Crypto operation enqueue failed\n");
+        return 0;
+    }
+
+    CPT_ATOMIC_INC(cpt_num_cipher_pipeline_requests_in_flight);
+
+  if(wctx && pal_ctx->async_cb)
+      pal_ctx->async_cb(NULL, NULL, 0, NULL, NULL, ASYNC_JOB_PAUSE);
+
+    CPT_ATOMIC_DEC(cpt_num_cipher_pipeline_requests_in_flight);
+
+    uint16_t num_dequeued_ops;
+    struct rte_crypto_op *dequeued_ops[PAL_NUM_DEQUEUED_OPS];
+
+    while (!status_curr_job->is_complete) {
+        num_dequeued_ops =
+            rte_cryptodev_dequeue_burst(pal_ctx->dev_id, pal_ctx->sym_queue,
+                dequeued_ops,
+                PAL_NUM_DEQUEUED_OPS);
+
+        for (int j = 0; j < num_dequeued_ops; j++) {
+            pal_cry_op_status_t *status_of_job;
+            status_of_job = rte_crypto_op_ctod_offset(
+                dequeued_ops[j], pal_cry_op_status_t *,
+                PAL_COP_METADATA_OFF);
+
+            status_of_job->is_complete = 1;
+            /* Check if operation was processed successfully */
+            if (dequeued_ops[j]->status !=
+                RTE_CRYPTO_OP_STATUS_SUCCESS) {
+                engine_log(ENG_LOG_ERR, "Crypto (GCM) op status is not success (err:%d)\n",
+                       dequeued_ops[j]->status);
+                status_of_job->is_successful = 0;
+            } else {
+                status_of_job->is_successful = 1;
+                    if(status_of_job->wctx_p)
+                        pal_ctx->async_cb(status_of_job->wctx_p,
+                                status_curr_job->wctx_p, status_of_job->numpipes,
+                                &pip_jb_qsz, &pip_jobs[0], ASYNC_JOB_POST_FINISH);
+
+
+            }
+        }
+    }
+
+    mbuf = pal_ctx->op->sym->m_src;
+
+    if (!status_curr_job->is_successful) {
+        rv = -1;
+        goto err;
+    }
+
+    dbuf = rte_pktmbuf_mtod_offset(mbuf, char *,
+                      pal_ctx->op->sym[0].aead.data.offset);
+    memcpy(out, dbuf, len);
+    rv = len;
+    if (pal_ctx->enc) {
+        memcpy(buf, pal_ctx->op->sym[0].aead.digest.data,
+               pal_ctx->tls_tag_len);
+        memcpy(pal_ctx->auth_tag,
+               pal_ctx->op->sym[0].aead.digest.data,
+               pal_ctx->tls_tag_len);
+    }
+err:
+    rte_mempool_put_bulk(pools->sym_op_pool, (void **)&pal_ctx->op, 1);
+    rte_pktmbuf_free(mbuf);
+    pal_ctx->tls_aad_len = -1;
+    pal_ctx->aad_len = -1;
+    return rv;
 }

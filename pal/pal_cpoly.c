@@ -447,3 +447,110 @@ err:
 
 	return rv;
 }
+
+int pal_chacha20_poly1305_tls_1_3_crypto(pal_cpoly_ctx_t *pal_ctx, unsigned char *out,
+    const unsigned char *in, size_t len, int sym_queue, unsigned char *buf, void *wctx)
+{
+    int enc, rv = -1;
+	uint8_t pip_jb_qsz = 0;
+    struct rte_mbuf *mbuf = NULL;
+	async_pipe_job_t pip_jobs[MAX_PIPE_JOBS];
+    pal_cry_op_status_t *status_ptr, *new_st_ptr;
+    uint16_t num_enqueued_ops, num_dequeued_ops;
+    struct rte_crypto_op *dequeued_ops[1];
+
+    enc = pal_ctx->enc;
+
+    pal_ctx->ibuf = rte_pktmbuf_alloc(pools->mbuf_pool);
+    if (pal_ctx->ibuf == NULL) {
+        engine_log(ENG_LOG_ERR, "Failed to create a mbuf: %d\n", __LINE__);
+        return -1;
+    }
+
+    /* Clear mbuf payload */
+    memset(rte_pktmbuf_mtod(pal_ctx->ibuf, uint8_t *), 0,
+            rte_pktmbuf_tailroom(pal_ctx->ibuf));
+
+    /* Create AEAD operation */
+    rv = create_crypto_operation(pal_ctx, in, len,  buf);
+    if (rv < 0)
+        return rv;
+
+    rte_crypto_op_attach_sym_session(pal_ctx->op, pal_ctx->cry_session);
+    pal_ctx->op->sym->m_src = pal_ctx->ibuf;
+
+    status_ptr = rte_crypto_op_ctod_offset (pal_ctx->op,
+            pal_cry_op_status_t *, PAL_COP_METADATA_OFF);
+
+    status_ptr->is_complete = 0;
+    status_ptr->is_successful = 0;
+    status_ptr->wctx_p = wctx;
+    status_ptr->numpipes = 1;
+
+    num_enqueued_ops =
+        rte_cryptodev_enqueue_burst(pal_ctx->dev_id,
+                sym_queue, &pal_ctx->op, 1);
+
+    if (num_enqueued_ops < 1) {
+        engine_log(ENG_LOG_ERR, "\nCrypto operation enqueue failed: %d\n", __LINE__);
+        return 0;
+    }
+
+	CPT_ATOMIC_INC(cpt_num_cipher_pipeline_requests_in_flight);
+
+    if(wctx && pal_ctx->async_cb)
+      pal_ctx->async_cb(NULL, NULL, 0, NULL, NULL, ASYNC_JOB_PAUSE);
+
+	CPT_ATOMIC_DEC(cpt_num_cipher_pipeline_requests_in_flight);
+
+    while (!status_ptr->is_complete) {
+        num_dequeued_ops = rte_cryptodev_dequeue_burst(
+            pal_ctx->dev_id, sym_queue, dequeued_ops, 1);
+
+        if (num_dequeued_ops > 0) {
+            new_st_ptr = rte_crypto_op_ctod_offset(
+                dequeued_ops[0], pal_cry_op_status_t *,
+                PAL_COP_METADATA_OFF);
+
+            new_st_ptr->is_complete = 1;
+            if (dequeued_ops[0]->status != RTE_CRYPTO_OP_STATUS_SUCCESS) {
+                engine_log(ENG_LOG_ERR, "Operation were not processed"
+                    "correctly err: %d", dequeued_ops[0]->status);
+                new_st_ptr->is_successful = 0;
+            } else {
+                new_st_ptr->is_successful = 1;
+                if(new_st_ptr->wctx_p)
+                    pal_ctx->async_cb(status_ptr->wctx_p,
+                            new_st_ptr->wctx_p, new_st_ptr->numpipes,
+                            &pip_jb_qsz, &pip_jobs[0], ASYNC_JOB_POST_FINISH);
+
+            }
+        }
+    }
+    mbuf = pal_ctx->op->sym->m_src;
+
+    if (!status_ptr->is_successful) {
+        rv = -1;
+        engine_log(ENG_LOG_ERR, "Job not process\n");
+        goto err;
+    }
+
+
+    void *dbuf = rte_pktmbuf_mtod_offset(mbuf, char *,
+                pal_ctx->op->sym[0].aead.data.offset);
+
+    memcpy(out, dbuf, len);
+    if (enc == 1) {
+        memcpy (buf, pal_ctx->op->sym[0].aead.digest.data,
+            PAL_CPOLY_AEAD_DIGEST_LEN);
+        memcpy (pal_ctx->auth_tag, pal_ctx->op->sym[0].aead.digest.data,
+            PAL_CPOLY_AEAD_DIGEST_LEN);
+    }
+    rv = len;
+
+err:
+    rte_mempool_put_bulk(pools->sym_op_pool, (void **)&pal_ctx->op, 1);
+    rte_pktmbuf_free(mbuf);
+
+    return rv;
+}

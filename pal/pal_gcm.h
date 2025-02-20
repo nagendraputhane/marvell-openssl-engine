@@ -52,8 +52,12 @@ typedef struct ossl_pal_ctx {
   uint16_t hw_off_pkt_sz_thrsh;
   iv_func_ptr iv_cb;
   async_job async_cb;
+  uint8_t is_tlsv_1_3;
 } pal_gcm_ctx_t;
 
+int pal_crypto_gcm_tls_1_3_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
+                                        const unsigned char *in, size_t len,
+                                  unsigned char *buf, void *wctx);
 int pal_crypto_gcm_non_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 			     const unsigned char *in, size_t len, unsigned char *buf);
 int pal_aes_gcm_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *buf,

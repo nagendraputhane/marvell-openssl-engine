@@ -432,8 +432,77 @@ skip_free_buf:
 }
 
 static inline int
-cpt_engine_crypto_gcm_non_tls_cipher(ossl_gcm_ctx_t *gcm_ctx, unsigned char *out,
+tls13_gcm_cipher(ossl_gcm_ctx_t *gcm_ctx, unsigned char *out,
 			                            const unsigned char *in, size_t len,
+                                  unsigned char *buf, ASYNC_WAIT_CTX *wctx)
+{
+  int ret = 0;
+  static uint8_t sw_encrypt = 0, sw_decrypt = 0;
+  pal_gcm_ctx_t *pal_ctx = &gcm_ctx->pal_ctx;
+  int enc = pal_ctx->enc;
+
+  if (in != NULL) {
+    if (enc) {
+      if (len < pal_ctx->hw_off_pkt_sz_thrsh) {
+        if (CRYPTO_gcm128_encrypt_ctr32(&gcm_ctx->gcm,
+              in,
+              out,
+              len, gcm_ctx->ctr)) {
+          pal_ctx->tls_aad_len = -1;
+          pal_ctx->aad_len = -1;
+          return -1;
+        }
+        sw_encrypt = 1;
+        return len;
+      }
+    } else {
+      if (len < pal_ctx->hw_off_pkt_sz_thrsh) {
+        if (CRYPTO_gcm128_decrypt_ctr32(&gcm_ctx->gcm,
+              in,
+              out,
+              len, gcm_ctx->ctr)) {
+          pal_ctx->tls_aad_len = -1;
+          pal_ctx->aad_len = -1;
+          return -1;
+        }
+        sw_decrypt = 1;
+        return len;
+      }
+    }
+  } else {
+    if (!enc) {
+      if (gcm_ctx->taglen < 0)
+        return -1;
+      if (sw_decrypt) {
+        ret = CRYPTO_gcm128_finish(&gcm_ctx->gcm, buf,
+            gcm_ctx->taglen);
+        if (ret != 0)
+          return -1;
+        sw_decrypt = 0;
+      }
+      memcpy(pal_ctx->auth_tag, buf, 16);
+      gcm_ctx->iv_set = 0;
+      return 0;
+    }
+    if (sw_encrypt) {
+      CRYPTO_gcm128_tag(&gcm_ctx->gcm, buf, 16);
+      sw_encrypt = 0;
+    }
+    memcpy(pal_ctx->auth_tag, buf, 16);
+    gcm_ctx->taglen = 16;
+    /* Don't reuse the IV */
+    gcm_ctx->iv_set = 0;
+    return 0;
+  }
+
+  ret = pal_crypto_gcm_tls_1_3_cipher(pal_ctx, out, in, len, buf, wctx);
+
+	return ret;
+}
+
+static inline int
+cpt_engine_crypto_gcm_non_tls_cipher(ossl_gcm_ctx_t *gcm_ctx, unsigned char *out,
+                                        const unsigned char *in, size_t len,
                                   unsigned char *buf)
 {
   int ret = 0;
@@ -442,28 +511,7 @@ cpt_engine_crypto_gcm_non_tls_cipher(ossl_gcm_ctx_t *gcm_ctx, unsigned char *out
   int enc = pal_ctx->enc;
 
   if (in != NULL) {
-    if (out == NULL) {
-      if (CRYPTO_gcm128_aad(&gcm_ctx->gcm, in, len))
-        return -1;
-      pal_ctx->aad =  pal_malloc(sizeof(uint8_t) * len);
-      if (!pal_ctx->aad)
-      {
-        engine_log(ENG_LOG_ERR, "AAD memory alloc failed\n");
-        return -1;
-      }
-      memcpy(pal_ctx->aad, in, len);
-      if ((size_t)pal_ctx->aad_len != len) {
-        ret = pal_create_aead_session(RTE_CRYPTO_AEAD_AES_GCM,
-            pal_ctx, len, 1);
-        if (ret < 0) {
-          engine_log(ENG_LOG_ERR, "Create aead session "
-              "failed\n");
-          return ret;
-        }
-        pal_ctx->aad_len = len;
-      }
-      return len;
-    } else if (enc) {
+    if (enc) {
       if (len < pal_ctx->hw_off_pkt_sz_thrsh) {
         if (CRYPTO_gcm128_encrypt_ctr32(&gcm_ctx->gcm,
               in,
@@ -518,7 +566,41 @@ cpt_engine_crypto_gcm_non_tls_cipher(ossl_gcm_ctx_t *gcm_ctx, unsigned char *out
 
   ret = pal_crypto_gcm_non_tls_cipher(pal_ctx, out, in, len, buf);
 
-	return ret;
+    return ret;
+}
+
+static inline int
+aes_gcm_update_aad_create_aead_session(ossl_gcm_ctx_t *gcm_ctx, const unsigned char *in, size_t len)
+{
+    int ret;
+    uint16_t *tls_ver;
+    pal_gcm_ctx_t *pal_ctx = &gcm_ctx->pal_ctx;
+
+	tls_ver = (uint16_t *) (in+1);
+
+	if( *tls_ver>= TLS1_2_VERSION)
+		pal_ctx->is_tlsv_1_3 = 1;
+
+      if (CRYPTO_gcm128_aad(&gcm_ctx->gcm, in, len))
+        return -1;
+      pal_ctx->aad =  pal_malloc(sizeof(uint8_t) * len);
+      if (!pal_ctx->aad)
+      {
+        engine_log(ENG_LOG_ERR, "AAD memory alloc failed\n");
+        return -1;
+      }
+      memcpy(pal_ctx->aad, in, len);
+      if ((size_t)pal_ctx->aad_len != len) {
+        ret = pal_create_aead_session(RTE_CRYPTO_AEAD_AES_GCM,
+            pal_ctx, len, 1);
+        if (ret < 0) {
+          engine_log(ENG_LOG_ERR, "Create aead session "
+              "failed\n");
+          return ret;
+        }
+        pal_ctx->aad_len = len;
+      }
+      return len;
 }
 
 int cpt_engine_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
@@ -564,6 +646,10 @@ int cpt_engine_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                 return -1;
         }
 
+        /*
+         * Handles all the cipher calls for TLS application mode where
+         * TLS version is < TLS 1.3
+         */
         ret = pal_aes_gcm_tls_cipher(pal_ctx, buf, (void*)ctx, wctx);
         gcm_ctx->iv_set = 0;
         return ret;
@@ -572,6 +658,17 @@ int cpt_engine_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     if (!gcm_ctx->iv_set)
         return -1;
 
+	if (in != NULL && out == NULL)
+		return aes_gcm_update_aad_create_aead_session(gcm_ctx, in, len);
+
+        /*
+         * Handles all the cipher calls for TLS application mode where
+         * TLS version is TLS 1.3
+         */
+	if (pal_ctx->is_tlsv_1_3)
+		return tls13_gcm_cipher(gcm_ctx, out, in, len, buf, wctx);
+
+        /* Handles all the cipher calls for crypto mode applications */
     ret = cpt_engine_crypto_gcm_non_tls_cipher(gcm_ctx, out, in, len, buf);
     if (ret < 0)
         return -1;
