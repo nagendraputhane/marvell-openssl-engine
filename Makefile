@@ -23,7 +23,7 @@ LDFLAGS_SHARED += $(shell $(PKG_CONFIG_CMD) --libs libdpdk)
 LDFLAGS_STATIC = $(shell $(PKG_CONFIG_CMD) --static --libs libdpdk)
 LDFLAGS = -L$(OPENSSL_INSTALL)/ -lcrypto
 
-CFLAGS += -O3 -I./
+CFLAGS += -O3 -g -I./
 CFLAGS += $(WERROR_FLAGS)
 CFLAGS += -I$(OPENSSL_INSTALL)/include -I$(OPENSSL_INSTALL)/crypto/modes/ -I$(OPENSSL_INSTALL)/crypto/ -I$(OPENSSL_INSTALL)/crypto/evp/
 CFLAGS += -DALLOW_EXPERIMENTAL_API -DPOLY1305_ASM
