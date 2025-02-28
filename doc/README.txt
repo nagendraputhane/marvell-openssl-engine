@@ -4,7 +4,7 @@
 
 03. Supported Platforms
 
-    - OCTEONTX/OCTEONTX2
+    - CN96XX, CN98XX, CN10XX
 
 04. Testing DPDK based Openssl Engine
 
@@ -42,11 +42,10 @@
 
 03. Supported Platforms
 =======================
-  This release supports OCTEONTX2 CN96XX, CN98XX, CN10XX
+  This release supports CN96XX, CN98XX, CN10XX
   The cryptodev PMDs supported on each platform are:
   1. CN96XX, CN98XX - librte_crypto_octeontx2, librte_crypto_openssl
   2. CN10XX - librte_crypto_cn10k
-  3. Intel X86 - librte_crypto_openssl
 
 I) Dependencies
 ---------------
@@ -66,7 +65,7 @@ II) Building and Running Instructions
    * Generic Solution in SDK package
    * Standalone
 
-  i) Building openssl engine in 'Generic Solution' release mode for OCTEONTX2 CN96XX
+  i) Building openssl engine in 'Generic Solution' release mode for CN96XX, CN98XX, CN10XX
 
   If released as 'generic solution' with SDK package, engine sources would be provided in
   SDK release package. Refer to SDK documentation for build instructions of engine solution.
@@ -76,7 +75,7 @@ II) Building and Running Instructions
   If released as 'standalone', user would need to install and setup dependencies
   manually, refer to following section for manual building
 
-  ii) Building dependencies manually in 'Standalone' mode for OCTEONTX2 CN96XX
+  ii) Building dependencies manually in 'Standalone' mode for CN96XX, CN98XX, CN10XX
 
     | Note:
     | - <PACKAGE_DIR> - directory where SDK is untarred
@@ -135,11 +134,7 @@ II) Building and Running Instructions
 
       # cd <ENGINE_DIR>
 
-      # cross-compile for OCTEONTX
-
-        make CROSS=<TOOLCHAIN_PATH>/aarch64-marvell-linux-gnu-
-
-      # cross-compile for OCTEONTX2
+      # cross-compile for CN96XX, CN98XX, CN10XX
 
         make CROSS=<TOOLCHAIN_PATH>/aarch64-marvell-linux-gnu- OTX2=y
 
@@ -149,7 +144,8 @@ II) Building and Running Instructions
         dpdk_src $ meson cross_build --cross-file config/arm/arm64_octeontx2_linux_gcc
                    --prefix=/usr/lib && ninja-build -C cross_build
 
-        while building engine
+        Running the below command will build dpdk_engine.so
+
         #make CROSS=<TOOLCHAIN_PATH>/aarch64-marvell-linux-gnu- OTX2=y
          DPDK_PC=/absolute/path/till/install_dir/usr/lib/pkgconfig
 
@@ -179,11 +175,11 @@ III) Setting up board to run Openssl Engine
 
   User should run platform specific scripts to setup required resources before
   launching engine:
-      - for OCTEON10,
+      - for CN10XX,
 
           source /usr/share/openssl-engine-dpdk/openssl-engine-dpdk-cn10k.sh /bin/dpdk-devbind.py
 
-      - for OCTEONTX2,
+      - for CN96XX, CN98XX,
 
           source /usr/share/openssl-engine-dpdk/openssl-engine-dpdk-otx2.sh /bin/dpdk-devbind.py
 
@@ -234,18 +230,18 @@ III) Setting up board to run Openssl Engine
 
       cd <ENGINE_LIB_DIR>/scripts
 
-        - for OCTEONTX2 (cn96xx and cn98xx),
+        - for CN98XX and CN10XX
 
           sh openssl-engine-dpdk-otx2.sh <path to dpdk-devbind.py>
 
-        - for OCTEON10 (cn106xx),
+        - for CN10XX
 
           sh openssl-engine-dpdk-cn10k.sh <path to dpdk-devbind.py>
 
 
 IV) Supported Features
 -----------------------
-  This section lists supported features of Openssl engine on OCTEONTX/OCTEONTX2 platform.
+  This section lists supported features of Openssl engine on CN96XX, CN98XX, CN10XX platform.
 
   a) RSA async mode with following modulus lengths(in bits):
 
@@ -270,42 +266,49 @@ IV) Supported Features
   f) Support Chacha20-poly1305 cipher on OCTEONTX2 96XX(rev:C0) and 98XX.
   g) OpenSSL pipeline feature - allows submission of batch requests to dpdk layer.
 
-04. Testing DPDK based Openssl Engine
-=====================================
-  a) Run OpenSSL engine command to check engine capabilities
-
-    # openssl engine dpdk_engine -c
-
-    Result of the above command is as below:
-
-    (dpdk_engine) OpenSSL Test engine support
-
-     [RSA, ECDH, ECDSA, ChaCha20-Poly1305, id-aes128-GCM, id-aes256-GCM,
-         AES-128-CBC, AES-256-CBC, AES-128-CBC-HMAC-SHA1, AES-256-CBC-HMAC-SHA1]
-
-    If we run above command on OCTEONTX2 96XX(rev:C0) and 98XX, then we will see
-    one more supported cipher. [ChaCha20-Poly1305]
-
-  b) Run OpenSSL s_server with engine
+04. Testing DPDK based Openssl
+===============================
+  a) Run OpenSSL without engine
 
     # openssl s_server -cert <CertificateFile> -key <KeyFile> -port 4433
-
-  c) Run OpenSSL s_client on peer machine to connect to s_server running
-     on the board
-
     # openssl s_client -connect <ip>:<port> -cipher <cipher_name>
+    # openssl speed -elapsed rsa2048
 
-  d) Using ENV variables to configure openssl engine.
-      OTX2_BUS - Override the bus id of CPT device (Default: 20, use 10 for OCTEONTX2)
-      CRYPTO_DRIVER - Override the crypto driver name to use (Default: crypto_cn10k)
+  b) Run OpenSSL with engine Using ENV variables to configure openssl engine.
+      OTX2_BUS - Override the bus id of CPT device (use 10 for CN96XX and CN98XX, 20 for CN10XX)
+      CRYPTO_DRIVER - Override the crypto driver name to use (use "crypto_cn9k" for CN96XX and CN98XX, "crypto_cn10k" for CN10XX)
 
-    For DPDK 20.11,
-    # OTX2_BUS=10 openssl engine dpdk_engine -c
-    For DPDK 21.11 & beyond,
-    (cn96xx) # OTX2_BUS=10 CRYPTO_DRIVER=crypto_cn9k openssl engine dpdk_engine -c
-    (cn106xx) # OTX2_BUS=10 CRYPTO_DRIVER=crypto_cn10k openssl engine dpdk_engine -c
+    #For CN9K board:
+         export OTX2_BUS=10
+         export CRYPTO_DRIVER=crypto_cn9k
 
-  e) Using dpdk_engine with openssl.cnf file (-engine argument should not be used)
+    #For CN10K board:
+         export OTX2_BUS=20
+         export CRYPTO_DRIVER=crypto_cn10k
+
+    #Create openssl.cnf file:
+         HOME                    = .
+         openssl_conf = openssl_init
+         [ openssl_init ]
+         engines = engine_section
+         [ eal_params_section ]
+         eal_params_common = "E_DPDKCPT --no-telemetry --socket-mem=500 -d librte_mempool_ring.so"
+         eal_params_cptpf_dbdf = "0002:10:00.0"
+
+         [ engine_section ]
+         dpdk_engine = dpdkcpt_engine_section
+
+         [ dpdkcpt_engine_section ]
+         dynamic_path =  /usr/local/lib/engines-1.1/dpdk_engine.so
+         eal_params = $eal_params_section::eal_params_common
+         eal_pid_in_fileprefix = yes
+         eal_core_by_cpu = yes
+         eal_cptvf_by_cpu = $eal_params_section::eal_params_cptpf_dbdf
+         cptvf_queues = {{0, 0}}
+         engine_alg_support = ALL
+         crypto_driver = "crypto_cn9k" //For cn10k, use crypto_cn10k
+         engine_log_level = ENG_LOG_INFO
+         init=1
 
     # OPENSSL_CONF=openssl.cnf openssl speed -elapsed rsa2048
     # OPENSSL_CONF=openssl.cnf openssl s_server -cert <CertificateFile> -key <KeyFile> -port 4433
@@ -313,7 +316,7 @@ IV) Supported Features
   f) Running multi-process applications with openssl.cnf file
      Due to the limitations of DPDK, forking applications need to ensure that openssl.cnf file is loaded after fork().
      With openssl speed with -multi option, use OPENSSL_CONF_MULTI env instead of OPENSSL_CONF for this reason.
-     Engine is loaded from openssl.cnf, do not use -engine argument when OPENSSL_CONF_MULTI is employed.
+     Engine is loaded from openssl.cnf
 
     # OPENSSL_CONF_MULTI=openssl.cnf openssl speed -multi 4 -elapsed rsa2048
 
@@ -327,60 +330,60 @@ IV) Supported Features
 
   a) Benchmark RSA
 
-    # openssl speed -elapsed rsa2048
+    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed rsa2048
 
   b) Benchmark RSA async mode
 
-    # openssl speed -async_jobs +26 -elapsed rsa2048
+    # OPENSSL_CONF=openssl.cnf openssl speed -async_jobs +26 -elapsed rsa2048
 
   c) Benchmark ECDSA on nistp256
 
-    # openssl speed -elapsed ecdsap256
+    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed ecdsap256
 
   d) Benchmark ECDSA on nistp256 in async mode
 
-    # openssl speed -async_jobs +8 -elapsed ecdsap256
+    # OPENSSL_CONF=openssl.cnf openssl speed -async_jobs +8 -elapsed ecdsap256
 
   e) Benchmark ECDH on nistp256
 
-    # openssl speed -elapsed ecdhp256
+    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed ecdhp256
 
   f) Benchmark ECDH on nistp256 in async mode
 
-    # openssl speed -async_jobs +8 -elapsed ecdhp256
+    # OPENSSL_CONF=openssl.cnf openssl speed -async_jobs +8 -elapsed ecdhp256
 
   g) Benchmark AES-128-CBC
 
-    # openssl speed -elapsed -evp aes-128-cbc
+    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed -evp aes-128-cbc
 
   h) Benchmark AES-128-CBC async mode
 
-    # openssl speed -elapsed -async_jobs +24 -evp aes-128-cbc
+    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed -async_jobs +24 -evp aes-128-cbc
 
   i) Benchmark AES-128-GCM
 
-    # openssl speed -elapsed -evp aes-128-gcm
+    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed -evp aes-128-gcm
 
   j) Benchmark AES-128-GCM async mode
 
-    # openssl speed -elapsed -async_jobs +24 -evp aes-128-gcm
+    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed -async_jobs +24 -evp aes-128-gcm
 
   k) Benchmark CHACHA20-POLY1305 async mode
 
-    # openssl speed -elapsed -async_jobs +24 -evp
+    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed -async_jobs +24 -evp
     # 	chacha20-poly1305
 
   l) Running openssl speed with -multi option
 
     Example for speed command with -multi option for RSA:
 
-    # openssl speed -multi 18 -async_jobs +26 -elapsed rsa2048
+    # OPENSSL_CONF=openssl.cnf openssl speed -multi 18 -async_jobs +26 -elapsed rsa2048
 
    m) Benchmark AES-CBC-HMAC-SHA1 in async mode
 
-    # openssl speed -elapsed -async_jobs +24 -evp aes-128-cbc-hmac-sha1
+    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed -async_jobs +24 -evp aes-128-cbc-hmac-sha1
 
-    # openssl speed -elapsed -async_jobs +24 -evp aes-256-cbc-hmac-sha1
+    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed -async_jobs +24 -evp aes-256-cbc-hmac-sha1
 
 
 06.  Notes
@@ -407,14 +410,8 @@ IV) Supported Features
 
 07. Known Issues
 ================
-  a) Multi Call for RSA, AES-GCM and Chacha20-Poly1305 not supported
-  b) While running in async mode, OpenSSL s_client waits for a read event
-     at socket before proceeding. This is an expected application behaviour.
-  c) RSA verify operation is not supported in x86 (crypto_openssl PMD)
-  d) Speed application with async mode is not supported for below:
-     - ECDSA
-     - ECDH
-  e) Speed application with AES-CBC is not supported with sync mode.
-  f) Speed is not supported for AES-CBC-HMAC-SHA1.
+  a) KeyUpdate is not supported in TLSv1.3 when using the cipher suite TLS_CHACHA20_POLY1305_SHA256
+  b) Speed is not supported for AES-CBC-HMAC-SHA1.
+  c) Speed application works with a maximum application data size of 32KB
 
 ..........................................
