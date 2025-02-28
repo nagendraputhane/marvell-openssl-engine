@@ -1,0 +1,178 @@
+From dfbb4108d018c73436e558edf3c8c96e8da7d606 Mon Sep 17 00:00:00 2001
+From: Sriram Vatala <svatala@marvell.com>
+Date: Fri, 21 Feb 2025 03:26:12 +0000
+Subject: [PATCH 1/3] Base speed fix patch for openssl-3.3.2
+
+Signed-off-by: Sriram Vatala <svatala@marvell.com>
+---
+ apps/speed.c | 89 ++++++++++++++++++++++++++++++++++++++++++++++------
+ 1 file changed, 80 insertions(+), 9 deletions(-)
+
+diff --git a/apps/speed.c b/apps/speed.c
+index 468ea56697..d8290dda37 100644
+--- a/apps/speed.c
++++ b/apps/speed.c
+@@ -7,7 +7,7 @@
+  * in the file LICENSE in the source distribution or at
+  * https://www.openssl.org/source/license.html
+  */
+-
++#define _GNU_SOURCE
+ #undef SECONDS
+ #define SECONDS          3
+ #define PKEY_SECONDS    10
+@@ -30,6 +30,8 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <sys/ipc.h>
++#include <sys/shm.h>
+ #include <math.h>
+ #include "apps.h"
+ #include "progs.h"
+@@ -46,7 +48,7 @@
+ #if !defined(OPENSSL_SYS_MSDOS)
+ # include <unistd.h>
+ #endif
+-
++#include "internal/conf.h"
+ #if defined(_WIN32)
+ # include <windows.h>
+ /*
+@@ -1734,7 +1736,16 @@ static int get_max(const uint8_t doit[], size_t algs_len) {
+         if (maxcnt < doit[i]) maxcnt = doit[i];
+     return maxcnt;
+ }
+-
++#define NUM_CORES 24
++#define SHM_KEY   6789
++static inline void cpu_pause()
++{
++       __asm__ __volatile__ ("nop");
++       __asm__ __volatile__ ("nop");
++       __asm__ __volatile__ ("nop");
++       __asm__ __volatile__ ("nop");
++}
++static uint64_t *shm;
+ int speed_main(int argc, char **argv)
+ {
+     CONF *conf = NULL;
+@@ -1964,7 +1975,7 @@ int speed_main(int argc, char **argv)
+         case OPT_MULTI:
+ #ifndef NO_FORK
+             multi = opt_int_arg();
+-            if ((size_t)multi >= SIZE_MAX / sizeof(int)) {
++            if (multi > NUM_CORES) {
+                 BIO_printf(bio_err, "%s: multi argument too large\n", prog);
+                 return 0;
+             }
+@@ -2379,7 +2390,16 @@ int speed_main(int argc, char **argv)
+         loopargs[i].secret_ff_b = app_malloc(MAX_FFDH_SIZE, "FFDH secret b");
+ #endif
+     }
+-
++     int shmid;
++     key_t shm_key = SHM_KEY;
++     if ((shmid = shmget(shm_key, sizeof(uint64_t)/* bytes of shm */, IPC_CREAT | 0666)) < 0) {
++            perror("shmget");
++            exit(1);
++     }
++     if ((shm = shmat(shmid, NULL, 0)) == (uint64_t *) -1) {
++            perror("shmat");
++            exit(1);
++     }
+ #ifndef NO_FORK
+     if (multi && do_multi(multi, size_num))
+         goto show_res;
+@@ -2398,10 +2418,51 @@ int speed_main(int argc, char **argv)
+         memset(loopargs[i].buf_malloc, 0, buflen);
+         memset(loopargs[i].buf2_malloc, 0, buflen);
+     }
+-
++    /* If dpdk_engine is already loaded, it means it is loaded via openssl conf.
++     * dpdk_engine doesn't support such loading when -multi is used (no fork after loading)
++     */
++    if (multi) {
++        e = ENGINE_get_first();
++        while (e) {
++            if (strcmp("dpdk_engine", ENGINE_get_id(e)) == 0) {
++                BIO_printf(bio_err, "dpdk_engine cannot be loaded using OPENSSL_CONF when -multi is enabled.\n"
++                                    "Use OPENSSL_CONF_MULTI env variable to load config file\n");
++                exit(1);
++            }
++            e = ENGINE_get_next(e);
++        }
++        e = NULL;
++    }
+     /* Initialize the engine after the fork */
+     e = setup_engine(engine_id, 0);
+-
++    char* multi_conf;
++    multi_conf = getenv("OPENSSL_CONF_MULTI");
++    if (multi && multi_conf != NULL) {
++        if (CONF_modules_load_file(multi_conf, NULL, 0) <=0 ) {
++            BIO_printf(bio_err, "Error loading config file set in OPENSSL_CONF_MULTI=%s\n", multi_conf);
++            exit(1);
++        }
++        if ((e = ENGINE_by_id("dpdk_engine")) != NULL &&
++                !ENGINE_set_default(e, ENGINE_METHOD_ALL)) {
++            BIO_printf(bio_err, "can't use that engine\n");
++            ERR_print_errors(bio_err);
++            ENGINE_free(e);
++            e = NULL;
++        }
++    }
++    static struct timespec start, end;
++    if(multi)
++    {
++        /* Start barrier */
++        __atomic_fetch_sub(shm, 1, __ATOMIC_RELAXED);
++        while(__atomic_load_n(shm, __ATOMIC_RELAXED) != 0)
++            cpu_pause();
++    }
++    clock_gettime(CLOCK_MONOTONIC_RAW, &start);
++    BIO_printf(bio_err,
++           "pid %u, start-end %lu.%lu - %lu.%lu\n",
++           getpid(), start.tv_sec, start.tv_nsec,
++           end.tv_sec, end.tv_nsec);
+     /* No parameters; turn on everything. */
+     if (argc == 0 && !doit[D_EVP] && !doit[D_HMAC]
+         && !doit[D_EVP_CMAC] && !do_kems && !do_sigs) {
+@@ -4122,7 +4183,11 @@ int speed_main(int argc, char **argv)
+         if (op_count <= 1)
+             stop_it(sigs_doit, testnum);
+     }
+-
++       clock_gettime(CLOCK_MONOTONIC_RAW, &end);
++       BIO_printf(bio_err,
++                  "pid %u, start-end %lu.%lu - %lu.%lu\n",
++                  getpid(), start.tv_sec, start.tv_nsec,
++                  end.tv_sec, end.tv_nsec);
+ #ifndef NO_FORK
+  show_res:
+ #endif
+@@ -4545,7 +4610,8 @@ static int do_multi(int multi, int size_num)
+     int *fds;
+     int status;
+     static char sep[] = ":";
+-
++    *(uint64_t *)shm = multi;
++    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+     fds = app_malloc(sizeof(*fds) * multi, "fd buffer for do_multi");
+     for (n = 0; n < multi; ++n) {
+         if (pipe(fd) == -1) {
+@@ -4568,6 +4634,11 @@ static int do_multi(int multi, int size_num)
+             mr = 1;
+             usertime = 0;
+             OPENSSL_free(fds);
++
++            cpu_set_t msk;
++            CPU_ZERO(&msk);
++            CPU_SET((n+1)%NUM_CORES, &msk);
++            sched_setaffinity(getpid(), sizeof(cpu_set_t), &msk);
+             return 0;
+         }
+         printf("Forked child %d\n", n);
+-- 
+2.48.1
+
