@@ -72,6 +72,13 @@ typedef struct {
     char mdname[PROV_MAX_NAME_SIZE];
 } PROV_RSA_CTX;
 
+static inline int prov_rsa_check_modlen(prov_rsa_key_data * key)
+{
+    int16_t modlen = key->n_len;
+
+    return pal_asym_xform_capability_check_modlen(modlen);
+}
+
 static void *rsa_newctx(void *provctx, const char *propq)
 {
     PROV_RSA_CTX *prsactx;
@@ -162,6 +169,11 @@ rsa_signverify_init(void *vctx, void *provkey,
         prsactx->key = provkey;
     }
 
+    if (unlikely(prov_rsa_check_modlen(prsactx->key) != 0)) {
+        fprintf(stderr, "Mod length %u not in supported range\n", prsactx->key->n_len);
+        return -1;
+    }
+
     prsactx->operation = operation;
     /* Default provider sets pad mode to RSA_PKCS1_PADDING as the default padding mode. */
     prsactx->pad_type = RTE_CRYPTO_RSA_PADDING_PKCS1_5;
@@ -185,49 +197,53 @@ static int rsa_verify_init(void *vctx, void *vrsa,
 }
 
 
-static inline int
-rsa_xform_setup(const prov_rsa_key_data * key, pal_rsa_ctx_t *pal_ctx)
+static inline void
+rsa_xform_crt_setup(const prov_rsa_key_data * key, pal_rsa_ctx_t *pal_ctx)
 {
-    size_t total_sz;
 
-    total_sz = BN_num_bytes(key->n);
-    if (key->e)
-        total_sz += BN_num_bytes(key->e);
-    if (key->d)
-        total_sz += BN_num_bytes(key->d);
+    pal_ctx->rsa_n_data = key->n_data;
+    pal_ctx->rsa_n_len = key->n_len;
 
-    pal_ctx->rsa_n_data = (uint8_t *)pal_malloc(total_sz);
-    if (unlikely(pal_ctx->rsa_n_data == NULL)) {
-        engine_log(ENG_LOG_ERR, "func:%s:line %u FAILED: %s", __func__,
-                __LINE__, "pal_malloc failure");
-        return -1;
-    }
+    pal_ctx->rsa_e_data = key->e_data;
+    pal_ctx->rsa_e_len = key->e_len;
 
-    pal_ctx->rsa_n_len = BN_bn2bin(key->n, pal_ctx->rsa_n_data);
+    pal_ctx->rsa_qt_p_data = key->qt_p_data;
+    pal_ctx->rsa_qt_p_len = key->qt_p_len;
 
-    if (key->e) {
-        pal_ctx->rsa_e_data = (uint8_t *)pal_ctx->rsa_n_data + pal_ctx->rsa_n_len;
+    pal_ctx->rsa_qt_q_data = key->qt_q_data;
+    pal_ctx->rsa_qt_q_len = key->qt_q_len;
 
-        pal_ctx->rsa_e_len = BN_bn2bin(key->e, pal_ctx->rsa_e_data);
-    }
+    pal_ctx->rsa_qt_dP_data = key->qt_dP_data;
+    pal_ctx->rsa_qt_dP_len = key->qt_dP_len;
 
-    if (key->d) {
-        pal_ctx->rsa_key_type = PAL_RSA_KEY_TYPE_EXP;
-        pal_ctx->rsa_d_data = (uint8_t *)pal_ctx->rsa_e_data + pal_ctx->rsa_e_len;
-        pal_ctx->rsa_d_len = BN_bn2bin(key->d, pal_ctx->rsa_d_data);
+    pal_ctx->rsa_qt_dQ_data = key->qt_dQ_data;
+    pal_ctx->rsa_qt_dQ_len = key->qt_dQ_len;
 
+    pal_ctx->rsa_qt_qInv_data = key->qt_qInv_data;
+    pal_ctx->rsa_qt_qInv_len = key->qt_qInv_len;
 
-    }
+    pal_ctx->rsa_key_type = PAL_RSA_KEY_TYPE_QT;
 
-    return 1;
+    return;
 }
 
-
-static inline int prov_rsa_check_modlen(prov_rsa_key_data * key)
+static inline void
+rsa_xform_non_crt_setup(const prov_rsa_key_data * key, pal_rsa_ctx_t *pal_ctx)
 {
-    int16_t modlen = BN_num_bytes(key->n);
 
-    return pal_asym_xform_capability_check_modlen(modlen);
+    pal_ctx->rsa_n_data = key->n_data;
+    pal_ctx->rsa_n_len = key->n_len;
+
+    pal_ctx->rsa_e_data = key->e_data;
+    pal_ctx->rsa_e_len = key->e_len;
+
+    pal_ctx->rsa_d_data = key->d_data;
+    pal_ctx->rsa_d_len = key->d_len;
+
+    pal_ctx->rsa_key_type = PAL_RSA_KEY_TYPE_EXP;
+
+    return;
+
 }
 
 static inline int rsa_sign(const unsigned char *from, int flen,
@@ -239,27 +255,18 @@ static inline int rsa_sign(const unsigned char *from, int flen,
     if(!prov_asym_get_valid_devid_qid(&pal_ctx.dev_id, &pal_ctx.qp_id))
         return -1;
 
-    if (unlikely(prov_rsa_check_modlen(ctx->key) != 0)) {
-        fprintf(stderr, "Mod length not in supported range\n");
-        return -1;
-    }
-
     pal_ctx.padding = ctx->pad_type;
     pal_ctx.async_cb = provider_ossl_handle_async_job;
 
-    if (!rsa_xform_setup(ctx->key, &pal_ctx))
-    {
-        fprintf(stderr,"%s: rsa_xform_setup failed",__func__);
-        return -1;
-    }
+    if ((pal_ctx.use_crt_method = ctx->key->use_crt) == 1)
+	rsa_xform_crt_setup(ctx->key, &pal_ctx);
+    else
+	rsa_xform_non_crt_setup(ctx->key, &pal_ctx);
 
 
     ret = pal_rsa_priv_enc(&pal_ctx, flen, from, to);
 
     *to_len = ret;
-
-    if (pal_ctx.rsa_n_data)
-        pal_free(pal_ctx.rsa_n_data);
 
     return ret;
 }
@@ -275,19 +282,10 @@ rsa_verify( unsigned char * decrypt_buf, const unsigned char *sign,
     if(!prov_asym_get_valid_devid_qid(&pal_ctx.dev_id, &pal_ctx.qp_id))
         return -1;
 
-    if (unlikely(prov_rsa_check_modlen(ctx->key) != 0)) {
-        fprintf(stderr, "Mod length not in supported range\n");
-        return -1;
-    }
-
     pal_ctx.padding = ctx->pad_type;
     pal_ctx.async_cb = provider_ossl_handle_async_job;
 
-    if (rsa_xform_setup(ctx->key, &pal_ctx) < 0)
-    {
-        fprintf(stderr,"%s: rsa_xform_setup failed\n",__func__);
-        return -1;
-    }
+    rsa_xform_non_crt_setup(ctx->key, &pal_ctx);
 
     ret = pal_rsa_pub_dec(&pal_ctx, signlen, sign, decrypt_buf);
 
@@ -296,9 +294,6 @@ rsa_verify( unsigned char * decrypt_buf, const unsigned char *sign,
         fprintf(stderr,"%s: pal_rsa_pub_dec failed\n",__func__);
         return -1;
     }
-
-    if (pal_ctx.rsa_n_data)
-        pal_free(pal_ctx.rsa_n_data);
 
     return ret;
 

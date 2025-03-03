@@ -36,6 +36,11 @@ static OSSL_PARAM prov_rsa_key_types[] = {
     OSSL_PARAM_BN(OSSL_PKEY_PARAM_RSA_N, NULL, 0),
     OSSL_PARAM_BN(OSSL_PKEY_PARAM_RSA_E, NULL, 0),
     OSSL_PARAM_BN(OSSL_PKEY_PARAM_RSA_D, NULL, 0),
+    OSSL_PARAM_BN(OSSL_PKEY_PARAM_RSA_FACTOR1, NULL, 0),
+    OSSL_PARAM_BN(OSSL_PKEY_PARAM_RSA_FACTOR2, NULL, 0),
+    OSSL_PARAM_BN(OSSL_PKEY_PARAM_RSA_EXPONENT1, NULL, 0),
+    OSSL_PARAM_BN(OSSL_PKEY_PARAM_RSA_EXPONENT2, NULL, 0),
+    OSSL_PARAM_BN(OSSL_PKEY_PARAM_RSA_COEFFICIENT1, NULL, 0),
 };
 
 /**
@@ -52,14 +57,16 @@ static void *prov_rsa_newdata(void *provctx)
     if (!prov_is_running())
 	return NULL;
 
-    kd = OPENSSL_zalloc(sizeof(*kd));
+    kd = pal_malloc(sizeof(*kd));
 
     if (kd == NULL) {
 	fprintf(stderr, "%s:%d:%s(): Memory allocation failed: "
-		"OPENSSL_zalloc returned NULL\n", __FILE__,
+		"rte_zmalloc returned NULL\n", __FILE__,
 		__LINE__, __func__);
 	return NULL;
     }
+
+    memset(kd, 0, sizeof(*kd));
 
     kd->provctx = provctx;
     PROV_ATOMIC_INC(kd->refcnt);
@@ -73,25 +80,8 @@ void __prov_rsa_freedata(void *keydata)
     if ((kd == NULL) || PROV_ATOMIC_DEC(kd->refcnt) > 0)
 	return;
 
-    if (kd->n)
-	BN_free(kd->n);
-    if (kd->e)
-	BN_free(kd->e);
-    if (kd->d)
-	BN_free(kd->d);
-#if 0
-    if (kd->p)
-	BN_free(kd->p);
-    if (kd->q)
-	BN_free(kd->q);
-    if (kd->dP)
-	BN_free(kd->dP);
-    if (kd->dQ)
-	BN_free(kd->dQ);
-    if (kd->qinv)
-	BN_free(kd->qinv);
-#endif
-    OPENSSL_free(kd);
+    pal_free(kd->base_ptr);
+    pal_free(kd);
     return;
 }
 
@@ -130,12 +120,12 @@ static int prov_rsa_get_params(void *key, OSSL_PARAM params[])
     OSSL_PARAM *p;
 
     p = OSSL_PARAM_locate(params, OSSL_PKEY_PARAM_BITS);
-    if (p != NULL && !OSSL_PARAM_set_int(p, BN_num_bits(kd->n)))
+    if (p != NULL && !OSSL_PARAM_set_int(p, kd->n_len * 8))
 	return 0;
 
     p = OSSL_PARAM_locate(params, OSSL_PKEY_PARAM_SECURITY_BITS);
     if (p != NULL) {
-	int mod_sz = BN_num_bits(kd->n);
+	int mod_sz = kd->n_len * 8;
 	int sec_bits = prov_rsa_modsz_to_security_bits(mod_sz);
 
 	if (!OSSL_PARAM_set_int(p, sec_bits))
@@ -148,7 +138,7 @@ static int prov_rsa_get_params(void *key, OSSL_PARAM params[])
     }
 
     p = OSSL_PARAM_locate(params, OSSL_PKEY_PARAM_MAX_SIZE);
-    if (p != NULL && !OSSL_PARAM_set_int(p, BN_num_bytes(kd->n)))
+    if (p != NULL && !OSSL_PARAM_set_int(p, kd->n_len))
 	return 0;
 
     fprintf(stderr, "%s:%d:%s(): Unknown OSSL_PARAM key\n", __FILE__,
@@ -165,13 +155,13 @@ static int prov_rsa_has(const void *keydata, int selection)
 	return 0;
 
     if ((selection & OSSL_KEYMGMT_SELECT_KEYPAIR) != 0)
-	ok = ok && (kd->n != NULL);
+	ok = ok && (kd->n_data != NULL);
 
     if ((selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0)
-	ok = ok && (kd->e != NULL);
+	ok = ok && (kd->e_data != NULL);
 
     if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0)
-	ok = ok && (kd->d != NULL);
+	ok = ok && (kd->d_data != NULL || kd->use_crt);
 
     return ok;
 }
@@ -197,30 +187,104 @@ static const OSSL_PARAM *prov_rsa_export_types(int selection)
 static int prov_rsa_fromdata(void *keydata, const OSSL_PARAM params[],
 			     int include_private)
 {
+    const OSSL_PARAM *param_p, *param_q, *param_r, *param_dP, *param_dQ, *param_qInv;
+    BIGNUM *p = NULL, *q = NULL, *dP = NULL, *dQ = NULL, *qInv = NULL;
     const OSSL_PARAM *param_n, *param_e, *param_d = NULL;
     prov_rsa_key_data *kd = (prov_rsa_key_data *) keydata;
     BIGNUM *n = NULL, *e = NULL, *d = NULL;
+    uint8_t *base;
+    int alloc_sz;
+    int ret = 0;
 
     param_n = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_N);
     param_e = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_E);
-    if (include_private)
-	param_d = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_D);
 
     if ((param_n != NULL && !OSSL_PARAM_get_BN(param_n, &n))
-	|| (param_e != NULL && !OSSL_PARAM_get_BN(param_e, &e))
-	|| (param_d != NULL && !OSSL_PARAM_get_BN(param_d, &d)))
+	|| (param_e != NULL && !OSSL_PARAM_get_BN(param_e, &e))) {
+	fprintf(stderr, "%s:%d:%s(): Failed to get RSA key parameters 'n' or 'e'\n",
+		__FILE__, __LINE__, __func__);
 	goto err;
+    }
 
-    kd->n = n;
-    kd->e = e;
-    kd->d = d;
+    alloc_sz = BN_num_bytes(n) + BN_num_bytes(e);
 
-    return 1;
+    if (include_private) {
+	param_d = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_D);
+	param_p = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_FACTOR1);
+	param_q = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_FACTOR2);
+	param_r = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_FACTOR3);
+	param_dP = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_EXPONENT1);
+	param_dQ = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_EXPONENT2);
+	param_qInv = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_COEFFICIENT1);
+
+	/* param_r is used to identify if this is a multi prime RSA */
+	if (!param_r &&
+	    param_p && OSSL_PARAM_get_BN(param_p, &p) &&
+	    param_q && OSSL_PARAM_get_BN(param_q, &q) &&
+	    param_dP && OSSL_PARAM_get_BN(param_dP, &dP) &&
+	    param_dQ && OSSL_PARAM_get_BN(param_dQ, &dQ) &&
+	    param_qInv && OSSL_PARAM_get_BN(param_qInv, &qInv)) {
+		alloc_sz += BN_num_bytes(p) + BN_num_bytes(q) + BN_num_bytes(dP) +
+			    BN_num_bytes(dQ) + BN_num_bytes(qInv);
+	} else if (param_d && OSSL_PARAM_get_BN(param_d, &d)) {
+		alloc_sz += BN_num_bytes(d);
+	} else {
+		fprintf(stderr, "%s:%d:%s(): Failed to import RSA key "
+				"parameters 'd' or 'p', 'q', 'dP', 'dQ',"
+				" 'qInv'\n",__FILE__, __LINE__, __func__);
+		goto err;
+	}
+
+    }
+
+    base = (uint8_t *)pal_malloc(alloc_sz);
+    if (unlikely(!base)) {
+	fprintf(stderr, "%s:%d:%s(): Failed to allocate memory for RSA key data\n",
+		__FILE__, __LINE__, __func__);
+	goto err;
+    }
+
+    kd->n_data = base;
+    kd->n_len = BN_bn2bin(n, kd->n_data);
+
+    kd->e_data = base + kd->n_len;
+    kd->e_len = BN_bn2bin(e, kd->e_data);
+
+    if (p && q && dP && dQ && qInv) {
+	kd->use_crt = 1;
+	kd->qt_p_data = kd->e_data + kd->e_len;
+	kd->qt_p_len = BN_bn2bin(p, kd->qt_p_data);
+
+	kd->qt_q_data = kd->qt_p_data + kd->qt_p_len;
+	kd->qt_q_len = BN_bn2bin(q, kd->qt_q_data);
+
+	kd->qt_dP_data = kd->qt_q_data + kd->qt_q_len;
+	kd->qt_dP_len = BN_bn2bin(dP, kd->qt_dP_data);
+
+	kd->qt_dQ_data = kd->qt_dP_data + kd->qt_dP_len;
+	kd->qt_dQ_len = BN_bn2bin(dQ, kd->qt_dQ_data);
+
+	kd->qt_qInv_data = kd->qt_dQ_data + kd->qt_dQ_len;
+	kd->qt_qInv_len = BN_bn2bin(qInv, kd->qt_qInv_data);
+    } else if (d) {
+	kd->use_crt = 0;
+	kd->d_data = kd->e_data + kd->e_len;
+	kd->d_len = BN_bn2bin(d, kd->d_data);
+    }
+
+    kd->base_ptr = base;
+    ret = 1;
 
   err:
     BN_free(n);
     BN_free(e);
     BN_free(d);
+    BN_free(p);
+    BN_free(q);
+    BN_free(dP);
+    BN_free(dQ);
+    BN_free(qInv);
+    return ret;
 }
 
 static int prov_rsa_import(void *keydata, int selection,
