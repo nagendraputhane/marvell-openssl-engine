@@ -152,7 +152,6 @@ II) Building and Running Instructions
          DPDK_PC=/absolute/path/till/install_dir/usr/lib/pkgconfig
 
       # to enable openssl.cnf support for dpdk_engine
-      # engine compiled with OSSL_CONF=y cannot be run without openssl.cnf file
 
         make CROSS=<TOOLCHAIN_PATH>/aarch64-marvell-linux-gnu- OTX2=y OSSL_CONF=y
 
@@ -312,15 +311,15 @@ IV) Supported Features
          engine_log_level = ENG_LOG_INFO
          init=1
 
-    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed rsa2048
-    # OPENSSL_CONF=openssl.cnf openssl s_server -cert <CertificateFile> -key <KeyFile> -port 4433
+    # OPENSSL_CONF=/opt/openssl.cnf openssl speed -elapsed rsa2048
+    # OPENSSL_CONF=/opt/openssl.cnf openssl s_server -cert <CertificateFile> -key <KeyFile> -port 4433
 
   f) Running multi-process applications with openssl.cnf file
      Due to the limitations of DPDK, forking applications need to ensure that openssl.cnf file is loaded after fork().
      With openssl speed with -multi option, use OPENSSL_CONF_MULTI env instead of OPENSSL_CONF for this reason.
      Engine is loaded from openssl.cnf
 
-    # OPENSSL_CONF_MULTI=openssl.cnf openssl speed -multi 4 -elapsed rsa2048
+    # OPENSSL_CONF_MULTI=/opt/openssl.cnf openssl speed -multi 4 -elapsed rsa2048
 
 05. Benchmarking DPDK based Openssl Engine
 ==========================================
@@ -332,60 +331,60 @@ IV) Supported Features
 
   a) Benchmark RSA
 
-    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed rsa2048
+    # OPENSSL_CONF=/opt/openssl.cnf openssl speed -elapsed rsa2048
 
   b) Benchmark RSA async mode
 
-    # OPENSSL_CONF=openssl.cnf openssl speed -async_jobs +26 -elapsed rsa2048
+    # OPENSSL_CONF=/opt/openssl.cnf openssl speed -async_jobs +26 -elapsed rsa2048
 
   c) Benchmark ECDSA on nistp256
 
-    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed ecdsap256
+    # OPENSSL_CONF=/opt/openssl.cnf openssl speed -elapsed ecdsap256
 
   d) Benchmark ECDSA on nistp256 in async mode
 
-    # OPENSSL_CONF=openssl.cnf openssl speed -async_jobs +8 -elapsed ecdsap256
+    # OPENSSL_CONF=/opt/openssl.cnf openssl speed -async_jobs +8 -elapsed ecdsap256
 
   e) Benchmark ECDH on nistp256
 
-    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed ecdhp256
+    # OPENSSL_CONF=/opt/openssl.cnf openssl speed -elapsed ecdhp256
 
   f) Benchmark ECDH on nistp256 in async mode
 
-    # OPENSSL_CONF=openssl.cnf openssl speed -async_jobs +8 -elapsed ecdhp256
+    # OPENSSL_CONF=/opt/openssl.cnf openssl speed -async_jobs +8 -elapsed ecdhp256
 
   g) Benchmark AES-128-CBC
 
-    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed -evp aes-128-cbc
+    # OPENSSL_CONF=/opt/openssl.cnf openssl speed -elapsed -evp aes-128-cbc
 
   h) Benchmark AES-128-CBC async mode
 
-    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed -async_jobs +24 -evp aes-128-cbc
+    # OPENSSL_CONF=/opt/openssl.cnf openssl speed -elapsed -async_jobs +24 -evp aes-128-cbc
 
   i) Benchmark AES-128-GCM
 
-    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed -evp aes-128-gcm
+    # OPENSSL_CONF=/opt/openssl.cnf openssl speed -elapsed -evp aes-128-gcm
 
   j) Benchmark AES-128-GCM async mode
 
-    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed -async_jobs +24 -evp aes-128-gcm
+    # OPENSSL_CONF=/opt/openssl.cnf openssl speed -elapsed -async_jobs +24 -evp aes-128-gcm
 
   k) Benchmark CHACHA20-POLY1305 async mode
 
-    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed -async_jobs +24 -evp
+    # OPENSSL_CONF=/opt/openssl.cnf openssl speed -elapsed -async_jobs +24 -evp
     # 	chacha20-poly1305
 
   l) Running openssl speed with -multi option
 
     Example for speed command with -multi option for RSA:
 
-    # OPENSSL_CONF=openssl.cnf openssl speed -multi 18 -async_jobs +26 -elapsed rsa2048
+    # OPENSSL_CONF=/opt/openssl.cnf openssl speed -multi 18 -async_jobs +26 -elapsed rsa2048
 
    m) Benchmark AES-CBC-HMAC-SHA1 in async mode
 
-    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed -async_jobs +24 -evp aes-128-cbc-hmac-sha1
+    # OPENSSL_CONF=/opt/openssl.cnf openssl speed -elapsed -async_jobs +24 -evp aes-128-cbc-hmac-sha1
 
-    # OPENSSL_CONF=openssl.cnf openssl speed -elapsed -async_jobs +24 -evp aes-256-cbc-hmac-sha1
+    # OPENSSL_CONF=/opt/openssl.cnf openssl speed -elapsed -async_jobs +24 -evp aes-256-cbc-hmac-sha1
 
 
 06.  Notes
@@ -401,7 +400,7 @@ IV) Supported Features
          c) Number of VFs to be initialised
          d) Distribution of queues between VFs
 
-       Please refer to sample 'openssl.cnf', part of OpenSSL ENGINE sources,
+       Please refer to sample 'openssl.cnf' provided at /opt/openssl.cnf,
        for syntatical and semantical information on setting up parameters and
        configuration.
 
