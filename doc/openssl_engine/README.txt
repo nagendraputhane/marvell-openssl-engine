@@ -167,12 +167,12 @@ III) Setting up board to run Openssl Engine
   built rootfs images. User should boot board with that rootfs image and find
   following libraries inside /usr directory
 
-     # Openssl engine library dpdk_engine.so at /usr/local/lib/engines-1.1/
-     # Openssl libraries libcrypto.so, libssl.so at /usr/lib/
-     # Openssl application library openssl at /usr/bin/
-     # Scripts to setup CPT VFS and hugepages at /usr/share/openssl-engine-dpdk/
-     # DPDK library libdpdk.so at /usr/lib/
-     # DPDK PMD libraries under /usr/lib/dpdk/pmds-<ABI_VERSION>/
+     # Openssl engine library dpdk_engine.so at /usr/local/lib/engines-1.1/  
+     # Openssl libraries libcrypto.so, libssl.so at /usr/lib/  
+     # Openssl application library openssl at /usr/bin/  
+     # Scripts to setup CPT VFS and hugepages at /usr/share/openssl-engine-dpdk/  
+     # DPDK library libdpdk.so at /usr/lib/  
+     # DPDK PMD libraries under /usr/lib/dpdk/pmds-<ABI_VERSION>/  
 
   User should run platform specific scripts to setup required resources before
   launching engine:
@@ -288,27 +288,27 @@ IV) Supported Features
          export CRYPTO_DRIVER=crypto_cn10k
 
     #Create openssl.cnf file:
-         HOME                    = .
-         openssl_conf = openssl_init
-         [ openssl_init ]
-         engines = engine_section
-         [ eal_params_section ]
-         eal_params_common = "E_DPDKCPT --no-telemetry --socket-mem=500 -d librte_mempool_ring.so"
-         eal_params_cptpf_dbdf = "0002:10:00.0"
+         HOME                    = .  
+         openssl_conf = openssl_init  
+         [ openssl_init ]  
+         engines = engine_section  
+         [ eal_params_section ]  
+         eal_params_common = "E_DPDKCPT --no-telemetry --socket-mem=500 -d librte_mempool_ring.so"  
+         eal_params_cptpf_dbdf = "0002:10:00.0"  
 
-         [ engine_section ]
-         dpdk_engine = dpdkcpt_engine_section
+         [ engine_section ]  
+         dpdk_engine = dpdkcpt_engine_section  
 
-         [ dpdkcpt_engine_section ]
-         dynamic_path =  /usr/local/lib/engines-1.1/dpdk_engine.so
-         eal_params = $eal_params_section::eal_params_common
-         eal_pid_in_fileprefix = yes
-         eal_core_by_cpu = yes
-         eal_cptvf_by_cpu = $eal_params_section::eal_params_cptpf_dbdf
-         cptvf_queues = {{0, 0}}
-         engine_alg_support = ALL
-         crypto_driver = "crypto_cn9k" //For cn10k, use crypto_cn10k
-         engine_log_level = ENG_LOG_INFO
+         [ dpdkcpt_engine_section ]  
+         dynamic_path =  /usr/local/lib/engines-1.1/dpdk_engine.so  
+         eal_params = $eal_params_section::eal_params_common  
+         eal_pid_in_fileprefix = yes  
+         eal_core_by_cpu = yes  
+         eal_cptvf_by_cpu = $eal_params_section::eal_params_cptpf_dbdf  
+         cptvf_queues = {{0, 0}}  
+         engine_alg_support = ALL  
+         crypto_driver = "crypto_cn9k" //For cn10k, use crypto_cn10k  
+         engine_log_level = ENG_LOG_INFO  
          init=1
 
     # OPENSSL_CONF=/opt/openssl.cnf openssl speed -elapsed rsa2048
@@ -391,7 +391,7 @@ IV) Supported Features
 =================
 
     I. Configuring OpenSSL engine using 'openssl.cnf' file
-          OpenSSL engine can be configured using OPENSSL CONF FILE.
+        OpenSSL engine can be configured using OPENSSL CONF FILE.
         [ref: https://www.openssl.org/docs/man1.1.1/man5/config.html]. Some
         parameters that can be configured via conf file are
 
