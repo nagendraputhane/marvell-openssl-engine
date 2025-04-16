@@ -17,19 +17,20 @@
 08. Known Issues
 
 
-01. Introduction
+01.Introduction
 ================
+
   This README gives overview of contents of this release, supported platform, known issues
   and pre-requisite to build and run DPDK based Openssl engine.
 
   For sake of simplicity, DPDK based Openssl engine in this release will be referred as
   'Openssl engine' in rest of the document.
 
-02. DPDK based Openssl Engine Directory Structure
+02.DPDK based Openssl Engine Directory Structure
 =================================================
-  Openssl engine directory structure looks like:
+  Openssl engine directory structure looks like
 
-  openssl-engine-dpdk
+    openssl-engine-dpdk
       | \|
       | \|---openssl_engine/
       | \|      (engine sources)
@@ -42,8 +43,10 @@
       | \|---doc/openssl_engine
       | \|      (contain README.txt and openssl.cnf)
 
-03. Supported Platforms
+
+03.Supported Platforms
 =======================
+
   This release supports CN96XX, CN98XX, CN10XX
   The cryptodev PMDs supported on each platform are:
   1. CN96XX, CN98XX - librte_crypto_octeontx2, librte_crypto_openssl
@@ -54,10 +57,10 @@ I) Dependencies
   Following sources are pre-requisite for Openssl Engine solution and should be
   built beforehand:
 
-  | a) SDK : Base SDK, engine release supported with. See Release Notes.
-  | b) DPDK : Provided in SDK package (Supported versions: 20.11, 21.11, 22.11, 23.11)
-  | c) OpenSSL : openssl-3.3.3
-  | d) Require ninja, meson utilities.
+  1.  SDK : Base SDK, engine release supported with. See Release Notes.
+  2.  DPDK : Provided in SDK package (Supported versions: 20.11, 21.11, 22.11, 23.11)
+  3.  OpenSSL : openssl-3.3.2
+  4.  Require ninja, meson utilities.
 
   The SDK is not used on the Intel X86 platform and is optional
 
@@ -167,12 +170,13 @@ III) Setting up board to run Openssl Engine
   built rootfs images. User should boot board with that rootfs image and find
   following libraries inside /usr directory
 
-     # Openssl engine library dpdk_engine.so at /usr/local/lib/engines-1.1/  
-     # Openssl libraries libcrypto.so, libssl.so at /usr/lib/  
-     # Openssl application library openssl at /usr/bin/  
-     # Scripts to setup CPT VFS and hugepages at /usr/share/openssl-engine-dpdk/  
-     # DPDK library libdpdk.so at /usr/lib/  
-     # DPDK PMD libraries under /usr/lib/dpdk/pmds-<ABI_VERSION>/  
+     # Openssl engine library dpdk_engine.so at /usr/local/lib/engines-1.1/
+     # Openssl libraries libcrypto.so, libssl.so at /usr/lib/
+     # Openssl application library openssl at /usr/bin/
+     # Scripts to setup CPT VFS and hugepages at /usr/share/openssl-engine-dpdk/
+     # DPDK library libdpdk.so at /usr/lib/
+     # DPDK PMD libraries under /usr/lib/dpdk/pmds-<ABI_VERSION>/
+
 
   User should run platform specific scripts to setup required resources before
   launching engine:
@@ -253,8 +257,11 @@ IV) Supported Features
     v.   4096
 
   b) AES128/256-CBC async mode
+
   c) AES128/256-GCM async mode
+
   d) openssl speed app -multi option
+
   e) ECDSA and ECDH offload in async mode with the following NIST recommended Elliptic Curves
      over Prime field (reference, https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.186-4.pdf):
 
@@ -265,9 +272,10 @@ IV) Supported Features
     v.   NIST P-521
 
   f) Support Chacha20-poly1305 cipher.
+
   g) OpenSSL pipeline feature - allows submission of batch requests to dpdk layer.
 
-04. Testing DPDK based Openssl
+04.Testing DPDK based Openssl
 ===============================
   a) Run OpenSSL without engine
 
@@ -288,27 +296,27 @@ IV) Supported Features
          export CRYPTO_DRIVER=crypto_cn10k
 
     #Create openssl.cnf file:
-         HOME                    = .  
-         openssl_conf = openssl_init  
-         [ openssl_init ]  
-         engines = engine_section  
-         [ eal_params_section ]  
-         eal_params_common = "E_DPDKCPT --no-telemetry --socket-mem=500 -d librte_mempool_ring.so"  
-         eal_params_cptpf_dbdf = "0002:10:00.0"  
+         HOME                    = .
+         openssl_conf = openssl_init
+         [ openssl_init ]
+         engines = engine_section
+         [ eal_params_section ]
+         eal_params_common = "E_DPDKCPT --no-telemetry --socket-mem=500 -d librte_mempool_ring.so"
+         eal_params_cptpf_dbdf = "0002:10:00.0"
 
-         [ engine_section ]  
-         dpdk_engine = dpdkcpt_engine_section  
+         [ engine_section ]
+         dpdk_engine = dpdkcpt_engine_section
 
-         [ dpdkcpt_engine_section ]  
-         dynamic_path =  /usr/local/lib/engines-1.1/dpdk_engine.so  
-         eal_params = $eal_params_section::eal_params_common  
-         eal_pid_in_fileprefix = yes  
-         eal_core_by_cpu = yes  
-         eal_cptvf_by_cpu = $eal_params_section::eal_params_cptpf_dbdf  
-         cptvf_queues = {{0, 0}}  
-         engine_alg_support = ALL  
-         crypto_driver = "crypto_cn9k" //For cn10k, use crypto_cn10k  
-         engine_log_level = ENG_LOG_INFO  
+         [ dpdkcpt_engine_section ]
+         dynamic_path =  /usr/local/lib/engines-1.1/dpdk_engine.so
+         eal_params = $eal_params_section::eal_params_common
+         eal_pid_in_fileprefix = yes
+         eal_core_by_cpu = yes
+         eal_cptvf_by_cpu = $eal_params_section::eal_params_cptpf_dbdf
+         cptvf_queues = {{0, 0}}
+         engine_alg_support = ALL
+         crypto_driver = "crypto_cn9k" //For cn10k, use crypto_cn10k
+         engine_log_level = ENG_LOG_INFO
          init=1
 
     # OPENSSL_CONF=/opt/openssl.cnf openssl speed -elapsed rsa2048
@@ -321,7 +329,7 @@ IV) Supported Features
 
     # OPENSSL_CONF_MULTI=/opt/openssl.cnf openssl speed -multi 4 -elapsed rsa2048
 
-05. Benchmarking DPDK based Openssl Engine
+05.Benchmarking DPDK based Openssl Engine
 ==========================================
   Openssl engine can be benchmarked using openssl speed application.
 
@@ -387,13 +395,12 @@ IV) Supported Features
     # OPENSSL_CONF=/opt/openssl.cnf openssl speed -elapsed -async_jobs +24 -evp aes-256-cbc-hmac-sha1
 
 
-06.  Notes
+06.Notes
 =================
 
-    I. Configuring OpenSSL engine using 'openssl.cnf' file
-        OpenSSL engine can be configured using OPENSSL CONF FILE.
-        [ref: https://www.openssl.org/docs/man1.1.1/man5/config.html]. Some
-        parameters that can be configured via conf file are
+  #### 1.Configuring OpenSSL engine using 'openssl.cnf' file
+
+         OpenSSL engine can be configured using OPENSSL CONF FILE. [ref: https://www.openssl.org/docs/man1.1.1/man5/config.html]. Some parameters that can be configured via conf file are
 
          a) 'eal params' for DPDK driver initialisation
          b) DPDK crypto driver to be used for crypto acceleration
@@ -404,15 +411,18 @@ IV) Supported Features
        for syntatical and semantical information on setting up parameters and
        configuration.
 
-   II. Composite Ciphersuites
-          For using composite cipher AES-CBC-HMAC-SHA1 on TLS applications,
-        The application must set SSL_OP_NO_ENCRYPT_THEN_MAC option on SSL CTX.
-        s_client and s_server provides '-no_etm' command line option to do this. (Only in OpenSSL 3.0.0)
+  #### 2.Composite Ciphersuites
+       - For using composite cipher AES-CBC-HMAC-SHA1 on TLS applications,
+       - The application must set SSL_OP_NO_ENCRYPT_THEN_MAC option on SSL CTX.
+       - s_client and s_server provides '-no_etm' command line option to do this. (Only in OpenSSL 3.0.0)
 
-07. Known Issues
+07.Known Issues
 ================
-  a) KeyUpdate is not supported in TLSv1.3 when using the cipher suite TLS_CHACHA20_POLY1305_SHA256
-  b) Speed is not supported for AES-CBC-HMAC-SHA1.
-  c) Speed application works with a maximum application data size of 32KB
+   1.  KeyUpdate is not supported in TLSv1.3 when using the cipher suite TLS_CHACHA20_POLY1305_SHA256
+   2.  While running in async mode, OpenSSL s_client waits for a read event
+       at socket before proceeding. This is an expected application behaviour.
+   3.  Speed is not supported for AES-CBC-HMAC-SHA1.
+   4.  Speed application works with a maximum application data size of 32KB
+       when dpdk engine is used.
 
 ..........................................
