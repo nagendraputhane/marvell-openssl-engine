@@ -127,10 +127,14 @@ II) Building and Running Instructions
 	  				&& ninja-build -C cross_build
 
 	  dpdk_src $ mkdir install_dir
+
 	  dpdk_src $ export DESTDIR=/absolute/path/till/install_dir
+
 	  dpdk_src $ cd cross_build/
+
 	  cross_build $ ninja install
-	  export DPDK_INSTALL=/absolute/path/till/install_dir
+
+          export DPDK_INSTALL=/absolute/path/till/install_dir
 
 
     d) Building Engine
@@ -171,10 +175,15 @@ III) Setting up board to run Openssl Engine
   following libraries inside /usr directory
 
      # Openssl engine library dpdk_engine.so at /usr/local/lib/engines-1.1/
+
      # Openssl libraries libcrypto.so, libssl.so at /usr/lib/
+
      # Openssl application library openssl at /usr/bin/
+
      # Scripts to setup CPT VFS and hugepages at /usr/share/openssl-engine-dpdk/
+
      # DPDK library libdpdk.so at /usr/lib/
+
      # DPDK PMD libraries under /usr/lib/dpdk/pmds-<ABI_VERSION>/
 
 
@@ -297,29 +306,48 @@ IV) Supported Features
 
     #Create openssl.cnf file:
          HOME                    = .
+
          openssl_conf = openssl_init
+
          [ openssl_init ]
+
          engines = engine_section
+
          [ eal_params_section ]
+
          eal_params_common = "E_DPDKCPT --no-telemetry --socket-mem=500 -d librte_mempool_ring.so"
+
          eal_params_cptpf_dbdf = "0002:10:00.0"
 
          [ engine_section ]
+
          dpdk_engine = dpdkcpt_engine_section
 
+
          [ dpdkcpt_engine_section ]
+
          dynamic_path =  /usr/local/lib/engines-1.1/dpdk_engine.so
+
          eal_params = $eal_params_section::eal_params_common
+
          eal_pid_in_fileprefix = yes
+
          eal_core_by_cpu = yes
+
          eal_cptvf_by_cpu = $eal_params_section::eal_params_cptpf_dbdf
+
          cptvf_queues = {{0, 0}}
+
          engine_alg_support = ALL
+
          crypto_driver = "crypto_cn9k" //For cn10k, use crypto_cn10k
+
          engine_log_level = ENG_LOG_INFO
+
          init=1
 
     # OPENSSL_CONF=/opt/openssl.cnf openssl speed -elapsed rsa2048
+
     # OPENSSL_CONF=/opt/openssl.cnf openssl s_server -cert <CertificateFile> -key <KeyFile> -port 4433
 
   f) Running multi-process applications with openssl.cnf file
@@ -398,14 +426,15 @@ IV) Supported Features
 06.Notes
 =================
 
+
   #### 1.Configuring OpenSSL engine using 'openssl.cnf' file
 
          OpenSSL engine can be configured using OPENSSL CONF FILE. [ref: https://www.openssl.org/docs/man1.1.1/man5/config.html]. Some parameters that can be configured via conf file are
 
-         a) 'eal params' for DPDK driver initialisation
-         b) DPDK crypto driver to be used for crypto acceleration
-         c) Number of VFs to be initialised
-         d) Distribution of queues between VFs
+         - 'eal params' for DPDK driver initialisation
+         - DPDK crypto driver to be used for crypto acceleration
+         - Number of VFs to be initialised
+         - Distribution of queues between VFs
 
        Please refer to sample 'openssl.cnf' provided at /opt/openssl.cnf,
        for syntatical and semantical information on setting up parameters and
