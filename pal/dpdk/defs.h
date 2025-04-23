@@ -1,7 +1,10 @@
 #include "pal.h"
 #include "pal_rsa.h"
 
-
+#define ARMv8_AES_set_encrypt_key aes_v8_set_encrypt_key
+#define ARMv8_AES_encrypt aes_v8_encrypt
+#define ARMv8_AES_set_decrypt_key aes_v8_set_decrypt_key
+#define ARMv8_AES_decrypt aes_v8_decrypt
 extern const char *crypto_name;
 extern int asym_dev_id[];
 extern int asym_queues[];
@@ -23,30 +26,30 @@ extern int sym_queues[];
 
 static inline int asym_get_valid_devid_qid(int *devid, int *queue)
 {
-    int thread_id = pal_get_thread_id();
+  int thread_id = pal_get_thread_id();
 
-    if(thread_id == -1 || asym_dev_id[thread_id] == -1) {
-        fprintf(stderr, "Invalid thread_id %d\n", thread_id);
-        return 0;
-    }
+  if(thread_id == -1 || asym_dev_id[thread_id] == -1) {
+    fprintf(stderr, "Invalid thread_id %d\n", thread_id);
+    return 0;
+  }
 
-    *devid = asym_dev_id[thread_id];
-    *queue = asym_queues[thread_id];
-    return 1;
+  *devid = asym_dev_id[thread_id];
+  *queue = asym_queues[thread_id];
+  return 1;
 }
 
 static inline int sym_get_valid_devid_qid(int *devid, int *queue)
 {
-    int thread_id = pal_get_thread_id();
+  int thread_id = pal_get_thread_id();
 
-    if(thread_id == -1 || sym_dev_id[thread_id] == -1) {
-        fprintf(stderr, "Invalid thread_id %d\n", thread_id);
-        return 0;
-    }
+  if(thread_id == -1 || sym_dev_id[thread_id] == -1) {
+    fprintf(stderr, "Invalid thread_id %d\n", thread_id);
+    return 0;
+  }
 
-    *devid = sym_dev_id[thread_id];
-    *queue = sym_queues[thread_id];
-    return 1;
+  *devid = sym_dev_id[thread_id];
+  *queue = sym_queues[thread_id];
+  return 1;
 }
 
 typedef enum pal_rsa_key_type {
@@ -64,20 +67,20 @@ typedef struct pal_rsa_ctx {
   int pad_type;
   int rsa_key_type;
   uint8_t *rsa_n_data;
-  int rsa_n_len;
   uint8_t *rsa_e_data;
-  int rsa_e_len;
   uint8_t *rsa_d_data;
-  int rsa_d_len;
   uint8_t *rsa_qt_p_data;
-  int rsa_qt_p_len;
   uint8_t *rsa_qt_q_data;
-  int rsa_qt_q_len;
   uint8_t *rsa_qt_dP_data;
-  int rsa_qt_dP_len;
   uint8_t *rsa_qt_dQ_data;
-  int rsa_qt_dQ_len;
   uint8_t *rsa_qt_qInv_data;
+  int rsa_n_len;
+  int rsa_e_len;
+  int rsa_d_len;
+  int rsa_qt_p_len;
+  int rsa_qt_q_len;
+  int rsa_qt_dP_len;
+  int rsa_qt_dQ_len;
   int rsa_qt_qInv_len;
   int padding;
   int use_crt_method;

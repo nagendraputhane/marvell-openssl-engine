@@ -14,6 +14,7 @@
 #include <openssl/rsa.h>	// RSA_*_PADDING macro declarations
 #include "pal.h"
 #include "pal_rsa.h"
+#include "defs.h"
 #include "prov.h"
 #include "rsa_kmgmt.h"
 #include "rsa_sig.h"
@@ -76,7 +77,7 @@ static inline int prov_rsa_check_modlen(prov_rsa_key_data * key)
 {
     int16_t modlen = key->n_len;
 
-    return pal_asym_xform_capability_check_modlen(modlen);
+    return pal_rsa_capability_check_modlen(modlen);
 }
 
 static void *rsa_newctx(void *provctx, const char *propq)

@@ -21,6 +21,7 @@
 #include <rte_mbuf.h>
 #include <rte_cryptodev.h>
 #include <rte_malloc.h>
+#include <rte_version.h>
 
 
 #if defined CRYPTO_OCTEONTX2
@@ -80,28 +81,18 @@
 # define CPT_ATOMIC_DEC_N(cpt_int, n)              \
 	            (__sync_sub_and_fetch(&(cpt_int), n))
 
-#define ARMv8_AES_set_encrypt_key aes_v8_set_encrypt_key
-#define ARMv8_AES_encrypt aes_v8_encrypt
-#define ARMv8_AES_set_decrypt_key aes_v8_set_decrypt_key
-#define ARMv8_AES_decrypt aes_v8_decrypt
-
 enum async_job_action {
 	ASYNC_JOB_POST_FINISH,
 	ASYNC_JOB_PAUSE
 };
+
+typedef struct pal_rsa_ctx pal_rsa_ctx_t;
 
 enum engine_log_error {
 	ENG_LOG_STDERR = 0,
 	ENG_LOG_EMERG = 1,
 	ENG_LOG_ERR = 2,
 	ENG_LOG_INFO = 3
-};
-
-enum ossl_log_error {
-	OSSL_LOG_STDERR = 0,
-	OSSL_LOG_EMERG = 1,
-	OSSL_LOG_ERR = 2,
-	OSSL_LOG_INFO = 3
 };
 
 typedef enum pal_crypto_aead_algorithm {
@@ -158,6 +149,7 @@ typedef struct async_pipe_job {
     int counter;
 } async_pipe_job_t;
 
+int pal_plt_init(void);
 int engine_log(uint32_t level, const char *fmt, ...);
 int ossl_log(uint32_t level, const char *fmt, ...);
 void pal_register_log_fp_and_level(FILE* fp, uint32_t level);
@@ -177,6 +169,7 @@ void pal_get_prop_name_and_desc(char* name,int len,
                                     char* rsa_desc, int rsa_len,
                                     char* ec_desc, int ec_len);
 void pal_get_provider_name(char *name, int len);
+
 int pal_cryptodev_configuration(pal_cryptodev_config_t *config);
 int pal_get_sym_valid_dev(int index);
 int pal_set_hw_offload_pktsz_thresh(uint16_t pkt_sz_thresh);
@@ -189,4 +182,5 @@ int pal_get_thread_id();
 int pal_plt_init();
 void * pal_malloc(size_t len);
 void pal_free(void *);
+
 #endif //__PAL_HH__

@@ -5,7 +5,7 @@
 #define _GNU_SOURCE
 #include <unistd.h>
 #include <sched.h>
-#include "pal/pal.h"
+#include "pal.h"
 
 #pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
 
@@ -18,8 +18,8 @@ static inline int provcpt_hw_init(void)
 	int argc, idx = -1, ret = 0;
 	char cpu[3] = {0};
 
-	sprintf(idstr, "rte%d", getpid());
-	sprintf(cpu, "%2d", sched_getcpu());
+	snprintf(idstr,sizeof(idstr), "rte%d", getpid());
+	snprintf(cpu,sizeof(cpu), "%2d", sched_getcpu());
 
 	char *argv[] = {
 		"DPDK",	"--file-prefix",

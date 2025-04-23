@@ -36,7 +36,7 @@ static inline char ** pal_get_hw_init_params(int *argc, char *crypto_driver_name
 				argv[7] = strdup("librte_mempool_ring.so");
 
 				*argc = 8;
-				strcpy(crypto_driver_name, crypto_name);
+				strcpy(crypto_driver_name,crypto_name);
 
 				return argv;
 }
