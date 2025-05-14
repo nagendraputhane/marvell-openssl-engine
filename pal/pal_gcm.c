@@ -29,8 +29,8 @@ int pal_create_aead_session(pal_crypto_aead_algorithm_t algo,
 	aead_xform.aead.digest_length = PAL_AEAD_DIGEST_LENGTH;
 	aead_xform.aead.aad_length = aad_len;
 
-  pal_ctx->aead_cry_session = pal_sym_create_session( pal_ctx->dev_id,
-      &aead_xform, reconfigure, NULL);
+	pal_ctx->aead_cry_session = pal_sym_create_session( pal_ctx->dev_id,
+              &aead_xform, reconfigure, pal_ctx->aead_cry_session);
 
 	return 0;
 }

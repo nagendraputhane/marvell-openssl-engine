@@ -247,8 +247,10 @@ priv_enc_start:
 
   ret = pal_rsa_priv_enc(&pal_ctx, flen, from, to);
 
-  if (pal_ctx.rsa_n_data)
+  if (pal_ctx.rsa_n_data) {
     pal_free(pal_ctx.rsa_n_data);
+    pal_ctx.rsa_n_data = NULL;
+  }
   if(ret >= 0)
     ret = RSA_size(rsa);
 
@@ -269,6 +271,7 @@ priv_enc_start:
       goto priv_enc_start;
     }
     pal_free(decrypt_msg);
+    decrypt_msg = NULL;
   }
 
   return ret;
@@ -309,8 +312,10 @@ int cpt_engine_rsa_pub_dec(int flen, const unsigned char *from, unsigned char *t
 
   ret = pal_rsa_pub_dec(&pal_ctx, flen, from, to);
 
-  if (pal_ctx.rsa_n_data)
+  if (pal_ctx.rsa_n_data) {
     pal_free(pal_ctx.rsa_n_data);
+    pal_ctx.rsa_n_data = NULL;
+  }
 
   return ret;
 }
@@ -353,8 +358,10 @@ int cpt_engine_rsa_pub_enc(int flen, const unsigned char *from, unsigned char *t
 
   ret = ret < 0 ? ret : RSA_size(rsa);
 
-  if (pal_ctx.rsa_n_data)
+  if (pal_ctx.rsa_n_data) {
     pal_free(pal_ctx.rsa_n_data);
+    pal_ctx.rsa_n_data = NULL;
+  }
 
   return ret;
 }
@@ -395,8 +402,10 @@ int cpt_engine_rsa_priv_dec(int flen, const unsigned char *from, unsigned char *
 
   ret = pal_rsa_priv_dec(&pal_ctx, flen, from, to);
 
- if (pal_ctx.rsa_n_data)
-    pal_free(pal_ctx.rsa_n_data);
+ if (pal_ctx.rsa_n_data) {
+   pal_free(pal_ctx.rsa_n_data);
+   pal_ctx.rsa_n_data = NULL;
+ }
 
  return ret;
 }

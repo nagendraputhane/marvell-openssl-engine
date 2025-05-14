@@ -214,6 +214,7 @@ err:
 		rte_crypto_op_free(crypto_op);
 
   pal_free(ecdsa_param->message.data);
+  ecdsa_param->message.data = NULL;
 	return ret;
 }
 
@@ -304,8 +305,10 @@ err:
 	}
 	if ( crypto_op != NULL)
 		rte_crypto_op_free(crypto_op);
-  if (ecdsa_param->message.data != NULL)
+  if (ecdsa_param->message.data != NULL) {
     pal_free(ecdsa_param->message.data);
+    ecdsa_param->message.data = NULL;
+  }
 
 	return ret;
 }

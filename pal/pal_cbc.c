@@ -215,6 +215,7 @@ int pal_aes_cbc_cleanup(pal_cbc_ctx_t *pal_ctx)
       engine_log(ENG_LOG_ERR, "FAILED to free session. ret=%d\n",
           retval);
   }
+  pal_ctx->cry_session = NULL;
 
   return 1;
 }

@@ -583,11 +583,13 @@ aes_gcm_update_aad_create_aead_session(ossl_gcm_ctx_t *gcm_ctx, const unsigned c
 
       if (CRYPTO_gcm128_aad(&gcm_ctx->gcm, in, len))
         return -1;
-      pal_ctx->aad =  pal_malloc(sizeof(uint8_t) * len);
-      if (!pal_ctx->aad)
-      {
-        engine_log(ENG_LOG_ERR, "AAD memory alloc failed\n");
-        return -1;
+
+      if (!pal_ctx->aad) {
+          pal_ctx->aad =  pal_malloc(sizeof(uint8_t) * len);
+          if (!pal_ctx->aad) {
+            engine_log(ENG_LOG_ERR, "AAD memory alloc failed!!!\n");
+            return -1;
+          }
       }
       memcpy(pal_ctx->aad, in, len);
       if ((size_t)pal_ctx->aad_len != len) {
@@ -692,10 +694,15 @@ int cpt_engine_aes_gcm_cleanup(EVP_CIPHER_CTX *ctx)
 
 
   retval = pal_sym_session_cleanup(pal_ctx->aead_cry_session, pal_ctx->dev_id);
+  if (retval < 0)
+    engine_log(ENG_LOG_ERR, "FAILED to free AEAD crypto session %d\n", retval);
+  pal_ctx->aead_cry_session = NULL;
+
   retval = pal_sym_session_cleanup(pal_ctx->cipher_cry_session, pal_ctx->dev_id);
 
   if (retval < 0)
-    engine_log(ENG_LOG_ERR, "FAILED to free session %d\n", retval);
+    engine_log(ENG_LOG_ERR, "FAILED to free Cipher crypto session %d\n", retval);
+  pal_ctx->cipher_cry_session = NULL;
 
 	if (pal_ctx->aad)
 	{

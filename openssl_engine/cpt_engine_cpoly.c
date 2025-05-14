@@ -701,19 +701,22 @@ cpt_engine_chacha20_poly1305_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
 static int cpt_engine_chacha20_poly1305_cleanup(EVP_CIPHER_CTX *ctx)
 {
-	int retval;
-	ossl_cpoly_ctx_t *cpolly_ctx = EVP_CIPHER_CTX_get_cipher_data(ctx);
-  pal_cpoly_ctx_t *pal_ctx = &cpolly_ctx->pal_ctx;
+  int retval;
 
-	if (cpolly_ctx == NULL)
-		return 0;
+  ossl_cpoly_ctx_t *cpolly_ctx = EVP_CIPHER_CTX_get_cipher_data(ctx);
+  if (cpolly_ctx == NULL)
+    return 0;
+
+  pal_cpoly_ctx_t *pal_ctx = &cpolly_ctx->pal_ctx;
 
   pal_sym_session_cleanup(pal_ctx->cry_session, pal_ctx->dev_id);
 
-	if (cpolly_ctx->actx)
-		OPENSSL_free(cpolly_ctx->actx);
+  if (cpolly_ctx->actx)
+    OPENSSL_free(cpolly_ctx->actx);
 
-	return 1;
+  pal_ctx->cry_session =  NULL;
+
+  return 1;
 }
 
 const EVP_CIPHER *cpt_engine_chacha20_poly1305(void)

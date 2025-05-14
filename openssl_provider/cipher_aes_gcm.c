@@ -189,11 +189,13 @@ crypto_gcm_cipher(PROV_AES_GCM_CTX *gcm_ctx, unsigned char *out,
 
     if (in != NULL) {
         if (out == NULL) {
-            prov_ctx->aad =  pal_malloc(sizeof(uint8_t) * len);
-            if (!prov_ctx->aad)
-            {
-                fprintf(stderr, "AAD memory alloc failed\n");
-                return -1;
+            if (!prov_ctx->aad) {
+                prov_ctx->aad =  pal_malloc(sizeof(uint8_t) * len);
+                if (!prov_ctx->aad)
+                {
+                    fprintf(stderr, "AAD memory alloc failed\n");
+                    return -1;
+                }
             }
 
             memcpy(prov_ctx->aad, in, len);
