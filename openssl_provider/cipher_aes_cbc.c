@@ -84,7 +84,7 @@ static inline int prov_hw_aes_cbc_initkey(PROV_AES_CBC_CTX *cbc_ctx, const uint8
     if(cbc_ctx->iv == NULL || key == NULL)
         return 0;
 
-    return pal_aes_cbc_create_session(pal_ctx, key, cbc_ctx->iv, enc, key_len);;
+    return pal_aes_cbc_create_session(pal_ctx, key, cbc_ctx->iv, enc, key_len);
 }
 
 static inline int prov_hw_aes_cbc_cipher(PROV_AES_CBC_CTX *cbc_ctx, unsigned char *out,
@@ -126,10 +126,9 @@ static void *prov_aes_cbc_newctx(void *provctx, size_t kbits)
     cbc_ctx->mode = EVP_CIPH_CBC_MODE;
     cbc_ctx->blocksize = PROV_CIPHER_AES256_CBC_BLKBITS / 8;
     cbc_ctx->pal_ctx.numpipes = 0;
-    cbc_ctx->pal_ctx.cry_session = NULL;
+    pal_sym_session_init(&cbc_ctx->pal_ctx);
     if (provctx != NULL)
         cbc_ctx->libctx = PROV_LIBCTX_OF(provctx);
-
     return cbc_ctx;
 }
 
@@ -142,6 +141,8 @@ void prov_aes_cbc_freectx(void *vctx)
         ctx->allocated = 0;
         ctx->tlsmac = NULL;
     }
+    if (ctx != NULL)
+        pal_aes_cbc_cleanup(&ctx->pal_ctx);
 
     OPENSSL_clear_free(ctx,  sizeof(*ctx));
 }
