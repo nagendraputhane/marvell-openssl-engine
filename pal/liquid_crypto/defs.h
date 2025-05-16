@@ -1,3 +1,6 @@
+/* SPDX-License-Identifier: Marvell-MIT
+ * Copyright (c) 2025 Marvell.
+ */
 
 #include <dao_liquid_crypto.h>
 #include "pal_rsa.h"
@@ -56,3 +59,44 @@ typedef struct pal_rsa_ctx {
 	uint8_t is_success;
 } pal_rsa_ctx_t;
 
+
+#define PAL_ASSERT(cond, error_msg) \
+	do { \
+		if (!(cond)) { \
+			fprintf(stderr, "%s\n", (error_msg)); \
+			return 0; \
+		} \
+	} while (0)
+
+typedef struct pal_cbc_ctx {
+	struct dao_lc_sym_ctx cry_session;
+	struct dao_lc_cmd_event event;
+	/* Below members are for pipeline */
+	//struct dao_lc_buf *input_buf;
+	//struct dao_lc_buf *output_buf;
+	uint8_t **input_buf;
+	uint8_t **output_buf;
+	long int *input_len;
+	int hw_offload_pkt_sz_threshold;
+	int sym_queue;
+	int dev_id; /* cpt dev_id*/
+	uint8_t numpipes;
+	async_job async_cb;
+} pal_cbc_ctx_t;
+
+int sym_create_session(uint16_t dev_id,
+		struct dao_lc_sym_ctx cry_session,struct dao_lc_cmd_event *event, uint8_t reconfigure, uint64_t sess_cookie);
+int sym_session_cleanup(struct dao_lc_cmd_event *event, int dev_id);
+static int sess_event_dequeue(uint8_t dev_id, struct dao_lc_cmd_event *ev);
+static inline int sym_get_valid_devid_qid(int *devid, int *queue)
+{
+	*devid = glb_params.dev_id;
+	*queue = glb_params.qp_id;
+	return 1;
+}
+
+static inline void pal_sym_session_init(pal_cbc_ctx_t *pal_ctx)
+{
+	memset(&pal_ctx->cry_session, 0, sizeof(pal_ctx->cry_session));
+	memset(&pal_ctx->event, 0, sizeof(pal_ctx->event));
+}

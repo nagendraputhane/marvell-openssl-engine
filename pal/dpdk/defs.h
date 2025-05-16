@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: Marvell-MIT
+ * Copyright (c) 2025 Marvell.
+ */
+
 #include "pal.h"
 #include "pal_rsa.h"
 
@@ -87,3 +91,28 @@ typedef struct pal_rsa_ctx {
   async_job async_cb;
   uint8_t *wctx_p;
 } pal_rsa_ctx_t;
+
+typedef struct pal_cbc_ctx {
+	struct rte_cryptodev_sym_session *cry_session;
+	/* Below members are for pipeline */
+	uint8_t **input_buf;
+	uint8_t **output_buf;
+	long int *input_len;
+	int hw_offload_pkt_sz_threshold;
+	int sym_queue;
+	int dev_id; /* cpt dev_id*/
+	uint8_t numpipes;
+	async_job async_cb;
+}pal_cbc_ctx_t;
+
+int pal_asym_create_session(uint16_t dev_id, struct rte_crypto_asym_xform *xform,
+	struct rte_cryptodev_asym_session **sess);
+struct rte_cryptodev_sym_session *pal_sym_create_session(uint16_t dev_id,
+	struct rte_crypto_sym_xform *xform,  uint8_t reconfigure,
+	struct rte_cryptodev_sym_session *ses);
+int pal_sym_session_cleanup(struct rte_cryptodev_sym_session *session, int dev_id);
+
+static inline void pal_sym_session_init(pal_cbc_ctx_t *pal_ctx)
+{
+	pal_ctx->cry_session = NULL;
+}
