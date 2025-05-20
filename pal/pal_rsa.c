@@ -135,7 +135,7 @@ int pal_dpdk_rsa_priv_enc(pal_rsa_ctx_t *pal_ctx, int flen,
 	struct rte_crypto_asym_op *asym_op = NULL;
 	struct rte_crypto_op *cry_op = NULL;
 	uint32_t op_size = 0;
-  int ret = 0;
+	int ret = 0;
 
 	/* Generate Crypto op data structure */
 	cry_op = rte_crypto_op_alloc(pools->asym_op_pool,
@@ -158,7 +158,7 @@ int pal_dpdk_rsa_priv_enc(pal_rsa_ctx_t *pal_ctx, int flen,
 		setup_non_crt_pub_op_xform(rsa_xform, pal_ctx);
 
 #if RTE_VERSION >= RTE_VERSION_NUM(24, 11, 0, 0)
-	if (padding == PAL_RSA_NO_PADDING)
+	if (pal_ctx->padding == PAL_RSA_NO_PADDING)
     		rsa_xform->rsa.padding.type = RTE_CRYPTO_RSA_PADDING_NONE;
   	else
     		rsa_xform->rsa.padding.type = RTE_CRYPTO_RSA_PADDING_PKCS1_5;
@@ -251,7 +251,7 @@ int pal_dpdk_rsa_pub_dec(pal_rsa_ctx_t *pal_ctx, int flen,
 	setup_non_crt_pub_op_xform(rsa_xform, pal_ctx);
 
 #if RTE_VERSION >= RTE_VERSION_NUM(24, 11, 0, 0)
-	if (padding == PAL_RSA_NO_PADDING)
+	if (pal_ctx->padding == PAL_RSA_NO_PADDING)
     		rsa_xform->rsa.padding.type = RTE_CRYPTO_RSA_PADDING_NONE;
   	else
     		rsa_xform->rsa.padding.type = RTE_CRYPTO_RSA_PADDING_PKCS1_5;
@@ -335,7 +335,7 @@ int pal_dpdk_rsa_pub_enc(pal_rsa_ctx_t *pal_ctx, int flen,
 	setup_non_crt_pub_op_xform(rsa_xform, pal_ctx);
 
 #if RTE_VERSION >= RTE_VERSION_NUM(24, 11, 0, 0)
-	if (padding == PAL_RSA_NO_PADDING)
+	if (pal_ctx->padding == PAL_RSA_NO_PADDING)
     		rsa_xform->rsa.padding.type = RTE_CRYPTO_RSA_PADDING_NONE;
   	else
     		rsa_xform->rsa.padding.type = RTE_CRYPTO_RSA_PADDING_PKCS1_5;
@@ -412,7 +412,7 @@ int pal_dpdk_rsa_priv_dec(pal_rsa_ctx_t *pal_ctx, int flen,
 	setup_crt_priv_op_xform(rsa_xform, pal_ctx);
 
 #if RTE_VERSION >= RTE_VERSION_NUM(24, 11, 0, 0)
-	if (padding == PAL_RSA_NO_PADDING)
+	if (pal_ctx->padding == PAL_RSA_NO_PADDING)
     		rsa_xform->rsa.padding.type = RTE_CRYPTO_RSA_PADDING_NONE;
   	else
     		rsa_xform->rsa.padding.type = RTE_CRYPTO_RSA_PADDING_PKCS1_5;
