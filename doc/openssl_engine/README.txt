@@ -147,7 +147,7 @@ II) Building and Running Instructions
 
         make CROSS=<TOOLCHAIN_PATH>/aarch64-marvell-linux-gnu- OTX2=y
 
-    NOTE : Please add DPDK_PC="/absoule/path/till/pkgconfig" to make command if
+    NOTE : Please add DPDK_PC="/absolute/path/till/pkgconfig" to make command if
            prefix is used with meson command while building engine.
       ex:
         dpdk_src $ meson cross_build --cross-file config/arm/arm64_octeontx2_linux_gcc
@@ -431,13 +431,13 @@ IV) Supported Features
 
          OpenSSL engine can be configured using OPENSSL CONF FILE. [ref: https://www.openssl.org/docs/man1.1.1/man5/config.html]. Some parameters that can be configured via conf file are
 
-         - 'eal params' for DPDK driver initialisation
+         - 'eal params' for DPDK driver initialization
          - DPDK crypto driver to be used for crypto acceleration
-         - Number of VFs to be initialised
+         - Number of VFs to be initialized
          - Distribution of queues between VFs
 
        Please refer to sample 'openssl.cnf' provided at /opt/openssl.cnf,
-       for syntatical and semantical information on setting up parameters and
+       for syntactic and semantic information on setting up parameters and
        configuration.
 
   #### 2.Composite Ciphersuites

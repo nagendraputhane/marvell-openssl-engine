@@ -136,7 +136,7 @@ II) Building and Running Instructions
 
         make CROSS=<TOOLCHAIN_PATH>/aarch64-marvell-linux-gnu- OTX2=y
 
-    NOTE : Please add DPDK_PC="/absoule/path/till/pkgconfig" to make command if
+    NOTE : Please add DPDK_PC="/absolute/path/till/pkgconfig" to make command if
            prefix is used with meson command while building provider.
       ex:
         dpdk_src $ meson cross_build --cross-file config/arm/arm64_octeontx2_linux_gcc
@@ -208,7 +208,7 @@ III) Setting up board to run Openssl Provider
         $ python3 ./usertools/dpdk-pmdinfo.py -p <DPDK_LIB_DIR>/librte_eal.so
         $ strings <DPDK_LIB_DIR>/librte_eal.so | grep DPDK_PLUGIN_PATH
 
-      copy required PMD *.so (librte_crypto_octeontx2) files 
+      copy required PMD *.so (librte_crypto_octeontx2) files
         from <DPDK_LIB_DIR>/dpdk/pmds-<ABI_VERSION>/ to <DPDK_PMD_PATH>
 
     # copy compiled <PROVIDER_DIR> on to target board as <PROVIDER_LIB_DIR>
