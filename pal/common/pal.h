@@ -55,7 +55,6 @@
 #define CACHE_FLUSH_THRESHOLD_MULTIPLIER 1.5
 #define CACHESZ_LIMIT(n)((n>1)?((n/CACHE_FLUSH_THRESHOLD_MULTIPLIER)-1):0)
 #define PAL_CPT_DIGEST_LEN			64
-#define PAL_MAX_THREADS  RTE_MAX_LCORE
 
 #define PAL_IV_OFFSET			\
 	(sizeof(struct rte_crypto_op) + sizeof(struct rte_crypto_sym_op))
@@ -126,17 +125,6 @@ typedef struct  pal_cryptodev_config {
 	int nb_asym_ops;
 } pal_cryptodev_config_t;
 
-typedef struct dpdk_pools {
-  struct rte_mempool *mbuf_pool;
-  struct rte_mempool *sym_ses_pool;
-  struct rte_mempool *sym_op_pool;
-  struct rte_mempool *asym_sess_pool;
-  struct rte_mempool *asym_op_pool;
-#if RTE_VERSION < RTE_VERSION_NUM(22, 11, 0, 99)
-  struct rte_mempool *sym_sess_priv_pool;
-#endif
-} dpdk_pools_t;
-
 typedef struct ossl_cry_op_status {
 	int is_complete;
 	int is_successful;
@@ -157,12 +145,6 @@ int pal_crypto_init(int argc, char **argv, bool rte_eal_init, char *);
 void pal_crypto_uninit();
 int pal_crypto_get_num_devices(void);
 int pal_cryptodev_config(pal_cryptodev_config_t *config);
-int pal_asym_create_session(uint16_t dev_id, struct rte_crypto_asym_xform *xform,
-    struct rte_cryptodev_asym_session **sess);
-struct rte_cryptodev_sym_session *pal_sym_create_session(uint16_t dev_id,
-    struct rte_crypto_sym_xform *xform,  uint8_t reconfigure,
-    struct rte_cryptodev_sym_session *ses);
-int pal_sym_session_cleanup(struct rte_cryptodev_sym_session *session, int dev_id);
 
 bool pal_is_hw_sym_algos_supported(int algo);
 void pal_get_prop_name_and_desc(char* name,int len,

@@ -2,6 +2,7 @@
  * Copyright (c) 2024 Marvell.
  */
 #include "pal.h"
+#include "defs.h"
 
 const char *crypto_name = NULL;
 uint8_t cptdevs[PAL_MAX_CPT_DEVICES];

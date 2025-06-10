@@ -102,15 +102,3 @@ int pal_asym_poll(uint8_t dev_id, uint16_t qp_id, user_callback_fn callback)
 {
 	return 0;
 }
-
-int pal_get_thread_id()
-{
-	unsigned int lcore = rte_lcore_id();
-
-	if (lcore == LCORE_ID_ANY) {
-		ossl_log(OSSL_LOG_ERR, "%s: lcore :%d\n", __FUNCTION__, lcore);
-		return -1;
-	}
-
-	return lcore;
-}

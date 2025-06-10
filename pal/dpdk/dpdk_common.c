@@ -4,11 +4,12 @@
 
 #include "pal.h"
 #include "pal_common.h"
+#include "defs.h"
 
 extern dpdk_pools_t *pools;
 
 struct rte_cryptodev_sym_session *
-pal_sym_create_session(uint16_t dev_id,
+sym_create_session(uint16_t dev_id,
                        struct rte_crypto_sym_xform *xform,
                        uint8_t reconfigure,
                        struct rte_cryptodev_sym_session *ses)
@@ -16,7 +17,7 @@ pal_sym_create_session(uint16_t dev_id,
   int retval;
 
   if (reconfigure)
-    pal_sym_session_cleanup(ses, dev_id);
+    sym_session_cleanup(ses, dev_id);
 
   /* Create Crypto session*/
 #if RTE_VERSION >= RTE_VERSION_NUM(22, 11, 0, 99)
@@ -77,7 +78,7 @@ bool pal_is_hw_sym_algos_supported(int algo)
 
 }
 
-int pal_sym_session_cleanup(struct rte_cryptodev_sym_session *session, int dev_id)
+int sym_session_cleanup(struct rte_cryptodev_sym_session *session, int dev_id)
 {
   int retval = 0;
 	if (session != NULL) {
@@ -99,7 +100,7 @@ int pal_sym_session_cleanup(struct rte_cryptodev_sym_session *session, int dev_i
 
 }
 
-int pal_asym_create_session(uint16_t dev_id, struct rte_crypto_asym_xform *xform,
+int asym_create_session(uint16_t dev_id, struct rte_crypto_asym_xform *xform,
                             struct rte_cryptodev_asym_session **sess)
 {
   int ret;

@@ -10,7 +10,6 @@
 #define MAX_DEQUEUE_OPS 32
 
 extern int cpt_num_asym_requests_in_flight;
-extern dpdk_pools_t *pools;
 
 static int ecdsa_sess_create(struct rte_crypto_asym_xform *ecdsa_xform,
 				struct rte_cryptodev_asym_session **sess, int devid)

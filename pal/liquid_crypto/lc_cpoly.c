@@ -5,7 +5,6 @@
 #include "pal_cpoly.h"
 
 extern int cpt_num_cipher_pipeline_requests_in_flight;
-extern dpdk_pools_t *pools;
 
 /*
  * Create AEAD Session

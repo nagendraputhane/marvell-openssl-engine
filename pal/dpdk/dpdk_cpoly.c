@@ -36,7 +36,7 @@ int pal_create_cpoly_aead_session(pal_cpoly_ctx_t *pal_ctx,
 	aead_xform.aead.key.data = pal_ctx->key;
 	aead_xform.aead.key.length = pal_ctx->key_len;
 
-  pal_ctx->cry_session = pal_sym_create_session( pal_ctx->dev_id, &aead_xform, reconfigure,
+  pal_ctx->cry_session = sym_create_session( pal_ctx->dev_id, &aead_xform, reconfigure,
       pal_ctx->cry_session);
 
   if (pal_ctx->cry_session == NULL) {

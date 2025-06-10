@@ -8,7 +8,6 @@
  */
 
 #include "pal_cbc.h"
-#include "defs.h"
 
 extern int cpt_num_cipher_pipeline_requests_in_flight;
 extern  dpdk_pools_t *pools;
@@ -255,7 +254,7 @@ int pal_aes_cbc_create_session(pal_cbc_ctx_t *pal_ctx, const unsigned char *key,
     cipher_xform.cipher.key.data = (const uint8_t *)key;
 
     /* Create crypto session and initialize it for the crypto device. */
-    pal_ctx->cry_session = pal_sym_create_session(pal_ctx->dev_id,
+    pal_ctx->cry_session = sym_create_session(pal_ctx->dev_id,
         &cipher_xform, 0,pal_ctx->cry_session);
     if (!pal_ctx->cry_session) {
       engine_log(ENG_LOG_ERR, "Could not create session.\n");

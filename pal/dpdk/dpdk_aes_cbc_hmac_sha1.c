@@ -47,7 +47,7 @@ int aes_cbc_hmac_sha1_setup_session(aes_cbc_hmac_sha1_ctx_t *pal_ctx)
 	auth_xform.auth.key.data = pal_ctx->hmac_key;
 	cipher_xform.cipher.key.data = (const uint8_t *)pal_ctx->key;
 
-  pal_ctx->cry_session = pal_sym_create_session(pal_ctx->dev_id, first_xform, 0, NULL);
+	pal_ctx->cry_session = sym_create_session(pal_ctx->dev_id, first_xform, 0, NULL);
 
 	return 1;
 }

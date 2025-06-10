@@ -3,6 +3,7 @@
  */
 
 #include "pal.h"
+#include "defs.h"
 
 extern dpdk_pools_t *pools;
 void * pal_pktbuf_alloc( size_t len, size_t predata_len)
