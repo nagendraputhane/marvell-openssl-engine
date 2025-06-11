@@ -219,6 +219,19 @@ else
 	$(CC) $(CFLAGS) -shared $(OBJS_OPENSSL_ENGINE) $(OBJS_PAL_DPDK) -o $@ $(LDFLAGS) $(LDFLAGS_SHARED) $(OPENSSL_INSTALL)/crypto/aes/aesv8-armx.S $(OPENSSL_INSTALL)/crypto/chacha/chacha-armv8.S $(OPENSSL_INSTALL)/crypto/poly1305/poly1305.c $(OPENSSL_INSTALL)/crypto/poly1305/poly1305-armv8.S $(OPENSSL_INSTALL)/crypto/armcap.c $(OPENSSL_INSTALL)/crypto/arm64cpuid.S
 endif
 
+install:
+ifeq ($(PAL),lc)
+	@echo "Installing lc_provider.so"
+	install -d /usr/local/lib64/ossl-modules/
+	install -m 755 lc_provider.so /usr/local/lib64/ossl-modules/
+else ifeq ($(PAL),dpdk)
+	@echo "Installing dpdk_provider.so"
+	install -d /usr/local/lib64/ossl-modules/
+	install -m 755 dpdk_provider.so /usr/local/lib64/ossl-modules/
+else
+	@echo "PAL not specified or unknown; nothing installed"
+endif
+
 clean:
 	rm -fr *.a pal/dpdk/*.o pal/liquid_crypto/*.o  openssl_provider/*.o  openssl_engine/*.o  lc_provider.so dpdk_provider.so dpdk_engine.so
 
