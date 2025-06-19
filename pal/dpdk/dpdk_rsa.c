@@ -18,7 +18,7 @@ static inline void
 setup_non_crt_pub_op_xform(struct rte_crypto_asym_xform *rsa_xform,
                            pal_rsa_ctx_t *pal_ctx);
 
-int pal_asym_xform_capability_check_modlen(int16_t modlen)
+int pal_rsa_capability_check_modlen(int16_t modlen)
 {
   return rte_cryptodev_asym_xform_capability_check_modlen(
             asym_rsa_xform_cap, modlen);
