@@ -23,7 +23,12 @@ DPDK_PC?=$(DPDK_INSTALL)/usr/local/lib/pkgconfig/
 else
 DPDK_PC?=$(DPDK_INSTALL)/lib/x86_64-linux-gnu/pkgconfig/
 endif
+
+ifeq ($(BUILD_TYPE),native)
 PKG_CONFIG_CMD=PKG_CONFIG_PATH=$(DPDK_PC) pkg-config
+else
+PKG_CONFIG_CMD=PKG_CONFIG_PATH=$(DPDK_PC) PKG_CONFIG_SYSROOT_DIR=$(DPDK_INSTALL) pkg-config
+endif
 PC_FILE := $(DPDK_PC)/libdpdk.pc
 
 CFLAGS = $(shell $(PKG_CONFIG_CMD) --cflags libdpdk)
