@@ -25,8 +25,8 @@
 #include "prov.h"
 #include "ciphercommon.h"
 #include "ciphercommon_aead.h"
-#include "pal/pal.h"
-#include "pal/pal_gcm.h"
+#include "pal.h"
+#include "pal_gcm.h"
 
 #define PROV_CIPHER_GCM_TAG_MAX_SIZE    16
 #define SSL_MAX_PIPELINES   32

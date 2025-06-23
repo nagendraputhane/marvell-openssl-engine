@@ -4,7 +4,7 @@
 #define _GNU_SOURCE
 #include <sched.h>
 #include <unistd.h>
-#include "pal/pal.h"
+#include "pal.h"
 
 #define OTX2_DEV_DOMAIN			2
 #define OTX2_NUM_ARGS		12

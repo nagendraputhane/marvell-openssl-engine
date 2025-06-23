@@ -14,8 +14,8 @@
 #include <openssl/proverr.h>
 #include "prov.h"
 #include "ciphercommon.h"
-#include "pal/pal.h"
-#include "pal/pal_cpoly.h"
+#include "pal.h"
+#include "pal_cpoly.h"
 
 #pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
 
@@ -47,9 +47,6 @@ static inline int prov_hw_chacha20_poly1305_init_key(pal_cpoly_ctx_t *pal_ctx,
 {
     if (key == NULL)
         return 1;
-
-    if(!prov_sym_get_valid_devid_qid(&pal_ctx->dev_id, &pal_ctx->queue))
-        return 0;
 
     pal_ctx->key_len = key_len;
     memcpy(pal_ctx->key, key, key_len);

@@ -4,7 +4,7 @@
  */
 
 
-#include "pal/pal_aes_cbc_hmac_sha1.h"
+#include "pal_aes_cbc_hmac_sha1.h"
 /*
  * AES HMAC SHA Implementation
  */

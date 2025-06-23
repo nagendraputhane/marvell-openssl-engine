@@ -8,8 +8,8 @@
 
 #include "prov.h"
 #include "ec_common.h"
-#include "pal/pal.h"
-#include "pal/pal_ecdsa.h"
+#include "pal.h"
+#include "pal_ecdsa.h"
 
 /**
  * Assumes that all the to-be-initialized pointers were set to NULL on function

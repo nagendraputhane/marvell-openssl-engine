@@ -21,7 +21,7 @@
 
 #include "prov.h"
 #include "ec_common.h"
-#include "pal/pal_ecdsa.h"
+#include "pal_ecdsa.h"
 
 #define PCURVES_MAX_PRIME_LEN	72 /* P521 curve */
 
@@ -137,9 +137,6 @@ static inline int ecdh_compute_key(unsigned char **pout, size_t *poutlen,
     BIGNUM *py = BN_new();
     pal_ecdsa_ctx_t pal_ctx = {0};
     pal_crypto_curve_id_t curve_id;
-
-    if(!prov_asym_get_valid_devid_qid(&pal_ctx.devid, &pal_ctx.queue))
-        goto err;
 
     if ((ctx = BN_CTX_new()) == NULL)
         goto err;

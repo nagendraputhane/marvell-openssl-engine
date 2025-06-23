@@ -5,7 +5,7 @@
 #ifndef _PAL_GCM_H_
 #define _PAL_GCM_H_
 
-#include "pal/pal.h"
+#include "pal.h"
 
 #define PAL_AEAD_DIGEST_LENGTH	  16
 #define PAL_AES128_GCM_KEY_LENGTH	16

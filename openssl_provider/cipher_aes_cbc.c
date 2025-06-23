@@ -23,8 +23,8 @@
 
 #include "prov.h"
 #include "ciphercommon.h"
-#include "pal/pal.h"
-#include "pal/pal_cbc.h"
+#include "pal.h"
+#include "pal_cbc.h"
 
 #define PROV_CIPHER_AES128_CBC_KEYBITS   128
 #define PROV_CIPHER_AES256_CBC_KEYBITS   256
@@ -80,9 +80,6 @@ static inline int prov_hw_aes_cbc_initkey(PROV_AES_CBC_CTX *cbc_ctx, const uint8
         size_t key_len, int enc)
 {
     pal_cbc_ctx_t *pal_ctx = &cbc_ctx->pal_ctx;
-
-    if(!prov_sym_get_valid_devid_qid(&pal_ctx->dev_id, &pal_ctx->sym_queue))
-        return 0;
 
     if(cbc_ctx->iv == NULL || key == NULL)
         return 0;

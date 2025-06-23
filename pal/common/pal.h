@@ -97,6 +97,13 @@ enum engine_log_error {
 	ENG_LOG_INFO = 3
 };
 
+enum ossl_log_error {
+	OSSL_LOG_STDERR = 0,
+	OSSL_LOG_EMERG = 1,
+	OSSL_LOG_ERR = 2,
+	OSSL_LOG_INFO = 3
+};
+
 typedef enum pal_crypto_aead_algorithm {
   PAL_CRYPTO_AEAD_AES_GCM = RTE_CRYPTO_AEAD_AES_GCM,
   PAL_CRYPTO_AEAD_CHACHA20_POLY1305 = RTE_CRYPTO_AEAD_CHACHA20_POLY1305,
@@ -152,6 +159,7 @@ typedef struct async_pipe_job {
 } async_pipe_job_t;
 
 int engine_log(uint32_t level, const char *fmt, ...);
+int ossl_log(uint32_t level, const char *fmt, ...);
 void pal_register_log_fp_and_level(FILE* fp, uint32_t level);
 int pal_crypto_init(int argc, char **argv, bool rte_eal_init, char *);
 void pal_crypto_uninit();
@@ -165,7 +173,10 @@ struct rte_cryptodev_sym_session *pal_sym_create_session(uint16_t dev_id,
 int pal_sym_session_cleanup(struct rte_cryptodev_sym_session *session, int dev_id);
 
 bool pal_is_hw_sym_algos_supported(int algo);
-
+void pal_get_prop_name_and_desc(char* name,int len,
+                                    char* rsa_desc, int rsa_len,
+                                    char* ec_desc, int ec_len);
+void pal_get_provider_name(char *name, int len);
 int pal_cryptodev_configuration(pal_cryptodev_config_t *config);
 int pal_get_sym_valid_dev(int index);
 int pal_set_hw_offload_pktsz_thresh(uint16_t pkt_sz_thresh);
@@ -175,6 +186,7 @@ void * pal_pktbuf_alloc(size_t len, size_t predata_len);
 void *pal_pktbuf_realloc(void *ptr, size_t len, size_t predata_len);
 void pal_pktbuf_free(void *ptr);
 int pal_get_thread_id();
+int pal_plt_init();
 void * pal_malloc(size_t len);
 void pal_free(void *);
 #endif //__PAL_HH__

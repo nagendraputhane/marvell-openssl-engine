@@ -12,11 +12,16 @@
 #include <prov/names.h>
 #include "prov.h"
 
-#define ALGC(NAMES, FUNC, CHECK) { { NAMES, "provider=dpdk_provider", FUNC }, CHECK }
+#define ALGC(NAMES, FUNC, CHECK) { { NAMES, prop_name, FUNC }, CHECK }
 #define ALG(NAMES, FUNC) ALGC(NAMES, FUNC, NULL)
 #define NELEM(x)    (sizeof(x)/sizeof((x)[0]))
-#define CPT_PROV_DESCS_EC "DPDK EC implementation"
-#define CPT_PROV_DESCS_RSA "DPDK RSA implementation"
+#define CPT_PROV_DESCS_EC   des_ec
+#define CPT_PROV_DESCS_RSA  des_rsa
+
+char provider_name[32];
+char prop_name[32];
+char des_ec[64];
+char des_rsa[64];
 
 /* Sym Cipher */
 extern const OSSL_DISPATCH prov_aes256cbc_functions[];
@@ -64,6 +69,27 @@ static const OSSL_PARAM prov_param_types[] = {
     OSSL_PARAM_DEFN(OSSL_PROV_PARAM_STATUS, OSSL_PARAM_INTEGER, NULL, 0),
     OSSL_PARAM_END
 };
+
+void get_provider_name()
+{
+	int name_len = sizeof(provider_name);
+	memset(provider_name, 0, name_len);
+	pal_get_provider_name(provider_name, name_len);
+}
+
+void get_prop_name_and_desc()
+{
+	int name_len = sizeof(prop_name);
+	memset(prop_name, 0, name_len);
+
+	int rsa_desc_len = sizeof(des_rsa);
+	memset(des_rsa, 0, rsa_desc_len);
+	int ec_desc_len = sizeof(des_ec);
+	memset(des_ec, 0, ec_desc_len);
+	pal_get_prop_name_and_desc(prop_name, name_len,
+			des_rsa, rsa_desc_len,
+			des_ec, ec_desc_len);
+}
 
 static const OSSL_PARAM *prov_gettable_params(void *provctx)
 {
@@ -156,7 +182,7 @@ static int prov_get_params(void *provctx, OSSL_PARAM params[])
     OSSL_PARAM *p;
 
     p = OSSL_PARAM_locate(params, OSSL_PROV_PARAM_NAME);
-    if (p != NULL && !OSSL_PARAM_set_utf8_ptr(p, "OpenSSL DPDK Provider"))
+    if (p != NULL && !OSSL_PARAM_set_utf8_ptr(p, provider_name))
         return 0;
     p = OSSL_PARAM_locate(params, OSSL_PROV_PARAM_VERSION);
     if (p != NULL && !OSSL_PARAM_set_utf8_ptr(p, "1.0"))
@@ -197,8 +223,8 @@ static const OSSL_ALGORITHM_CAPABLE prov_ciphers[] = {
 static OSSL_ALGORITHM prov_supported_ciphers[NELEM(prov_ciphers)];
 
 static const OSSL_ALGORITHM prov_signature[] = {
-    { PROV_NAMES_RSA, "provider=dpdk_provider", prov_rsa_signature_functions },
-    { PROV_NAMES_ECDSA, "provider=dpdk_provider", prov_ecdsa_signature_functions },
+    { PROV_NAMES_RSA, prop_name, prov_rsa_signature_functions },
+    { PROV_NAMES_ECDSA, prop_name, prov_ecdsa_signature_functions },
     { NULL, NULL, NULL }
 };
 
@@ -208,14 +234,14 @@ static const OSSL_ALGORITHM prov_asym_cipher[] = {
 };
 
 static const OSSL_ALGORITHM prov_keyexch[] = {
-    { PROV_NAMES_ECDH, "provider=dpdk_provider", prov_ecdh_keyexch_functions },
+    { PROV_NAMES_ECDH, prop_name, prov_ecdh_keyexch_functions },
     { NULL, NULL, NULL }
 };
 
 static const OSSL_ALGORITHM prov_keymgmt[] = {
-    { PROV_NAMES_EC, "provider=dpdk_provider", prov_ec_keymgmt_functions,
+    { PROV_NAMES_EC, prop_name, prov_ec_keymgmt_functions,
       CPT_PROV_DESCS_EC },
-    { PROV_NAMES_RSA, "provider=dpdk_provider", prov_rsa_keymgmt_functions,
+    { PROV_NAMES_RSA, prop_name, prov_rsa_keymgmt_functions,
       CPT_PROV_DESCS_RSA },
     { NULL, NULL, NULL }
 };
@@ -263,6 +289,9 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
                                void **provctx)
 {
     OSSL_LIB_CTX *libctx = NULL;
+
+    get_prop_name_and_desc();
+    get_provider_name();
 
     if ((*provctx = prov_ctx_new()) == NULL
         || (libctx = OSSL_LIB_CTX_new_child(handle, in)) == NULL) {

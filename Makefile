@@ -22,7 +22,7 @@ LDFLAGS_SHARED += $(shell $(PKG_CONFIG_CMD) --libs libdpdk)
 LDFLAGS_STATIC = $(shell $(PKG_CONFIG_CMD) --static --libs libdpdk)
 LDFLAGS = -L$(OPENSSL_INSTALL)/ -lcrypto
 
-CFLAGS += -O3 -I./
+CFLAGS += -g -O2  -I./openssl_provider -I./pal/dpdk -I./pal/common
 CFLAGS += $(WERROR_FLAGS)
 CFLAGS += -I$(OPENSSL_INSTALL)/include -I$(OPENSSL_INSTALL)/crypto/modes/ -I$(OPENSSL_INSTALL)/crypto/ -I$(OPENSSL_INSTALL)/crypto/evp/
 CFLAGS += -I$(OPENSSL_INSTALL)/include -I$(OPENSSL_INSTALL)/providers/common/include -I$(OPENSSL_INSTALL)/providers/implementations/include
@@ -50,7 +50,7 @@ LIB_PAL = pal_dpdk_crypto.a
 # All source files are stored in SRCS
 SRCS_OPENSSL_PROVIDER = $(wildcard openssl_provider/*.c)
 SRCS_OPENSSL_ENGINE = $(wildcard openssl_engine/*.c)
-SRCS_PAL = $(wildcard pal/*.c)
+SRCS_PAL = $(wildcard pal/dpdk/*.c)
 
 CC=$(CROSS)gcc
 OBJS_PAL = $(patsubst %.c,%.o,$(SRCS_PAL))
@@ -97,4 +97,4 @@ else
 endif
 
 clean:
-	rm -fr *.a pal/*.o openssl_engine/*.o dpdk_engine.so openssl_provider/*.o dpdk_provider.so
+	rm -fr *.a pal/dpdk/*.o openssl_engine/*.o dpdk_engine.so openssl_provider/*.o dpdk_provider.so

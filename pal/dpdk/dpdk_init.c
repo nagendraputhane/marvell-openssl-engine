@@ -353,11 +353,10 @@ int pal_cryptodev_configuration(pal_cryptodev_config_t *config)
 	}
 
 	ret = config_sym_devs(sym_dev_count, config);
-  if (ret < 0)
+	if (ret < 0)
 	{
 		engine_log(ENG_LOG_ERR, "Failed to configure symmetric devices\n");
 		goto err;
-	
 	}
 	ret = config_asym_devs(sym_valid_dev, sym_dev_count, config);
 	if (ret < 0)
@@ -395,7 +394,26 @@ int pal_crypto_get_num_devices(void)
 
 int pal_get_sym_valid_dev(int index)
 {
-  if(index >= sym_dev_count)
-    return -1;
+	if(index >= sym_dev_count)
+		return -1;
+
 	return sym_valid_dev[index];
+}
+
+void pal_get_prop_name_and_desc(char *name,int len, char *rsa_desc,int rsa_desc_len, char *ec_desc, int desc_len)
+{
+    strncpy(name,"provider=dpdk_provider",len-1);
+    name[len-1]='\0';
+
+	strncpy(rsa_desc, "DPDK RSA implementation", rsa_desc_len - 1);
+	rsa_desc[rsa_desc_len - 1] = '\0';
+	strncpy(ec_desc, "DPDK EC implementation", desc_len - 1);
+	ec_desc[desc_len - 1] = '\0';
+
+}
+
+void pal_get_provider_name(char *name, int len)
+{
+	strncpy(name, "OPENSSL DPDK PROVIDER", len - 1);
+	name[len - 1] = '\0';
 }

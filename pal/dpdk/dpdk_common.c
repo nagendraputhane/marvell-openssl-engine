@@ -32,11 +32,11 @@ pal_sym_create_session(uint16_t dev_id,
     return NULL;
   }
 
-  if (rte_cryptodev_sym_session_init(dev_id, ses, 
-        xform, pools->sym_ses_priv_pool) < 0) {
+  if (rte_cryptodev_sym_session_init(dev_id, ses,
+	xform, pools->sym_ses_priv_pool) < 0) {
     engine_log(ENG_LOG_ERR, "Session could not be initialized "
         "for the crypto device\n");
-    return NULL; 
+    return NULL;
   }
 #endif
 

@@ -5,6 +5,7 @@
 #include "pal_rsa.h"
 #include "pal.h"
 #include <openssl/bn.h>
+#include "defs.h"
 
 #pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
 
@@ -146,6 +147,9 @@ int pal_rsa_priv_enc(pal_rsa_ctx_t *pal_ctx, int flen,
 	uint32_t op_size = 0;
 	int ret = 0;
 
+	if(!asym_get_valid_devid_qid(&pal_ctx->dev_id, &pal_ctx->qp_id))
+		return -1;
+
 	/* Generate Crypto op data structure */
 	cry_op = rte_crypto_op_alloc(pools->asym_op_pool,
 				     RTE_CRYPTO_OP_TYPE_ASYMMETRIC);
@@ -255,6 +259,9 @@ int pal_rsa_pub_dec(pal_rsa_ctx_t *pal_ctx, int flen,
 	struct rte_crypto_op *cry_op = NULL;
 	uint32_t op_size = 0;
 	int ret = 0;
+
+	if(!asym_get_valid_devid_qid(&pal_ctx->dev_id, &pal_ctx->qp_id))
+        	return -1;
 
 	/* Generate Crypto op data structure */
 	cry_op = rte_crypto_op_alloc(pools->asym_op_pool,

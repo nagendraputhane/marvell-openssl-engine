@@ -7,6 +7,7 @@
 
 #include "pal_ecdsa.h"
 
+#include "defs.h"
 #define MAX_DEQUEUE_OPS 32
 
 extern int cpt_num_asym_requests_in_flight;
@@ -134,8 +135,11 @@ int pal_ecdsa_sign(pal_ecdsa_ctx_t *pal_ctx)
 	struct rte_cryptodev_asym_session *sess = NULL;
 	struct rte_crypto_asym_op *asym_op = NULL;
 	struct rte_crypto_op *crypto_op = NULL;
-  struct rte_crypto_ec_point *cp;
+	struct rte_crypto_ec_point *cp;
 	int ret = 0;
+
+	if(!asym_get_valid_devid_qid(&pal_ctx->devid, &pal_ctx->queue))
+        	return 0;
 
 	crypto_op = rte_crypto_op_alloc(pools->asym_op_pool,
 					RTE_CRYPTO_OP_TYPE_ASYMMETRIC);
@@ -144,7 +148,7 @@ int pal_ecdsa_sign(pal_ecdsa_ctx_t *pal_ctx)
 
 	asym_xform = __rte_crypto_op_get_priv_data(crypto_op, xform_size);
 
-  memset(asym_xform, 0, sizeof(*asym_xform));
+	memset(asym_xform, 0, sizeof(*asym_xform));
 	asym_op = &crypto_op->asym[0];
 	ecdsa_param = &asym_op->ecdsa;
 
@@ -158,9 +162,9 @@ int pal_ecdsa_sign(pal_ecdsa_ctx_t *pal_ctx)
 
     asym_xform->next = NULL;
     asym_xform->xform_type = pal_ctx->xform_type;
-    asym_xform->ec.curve_id = pal_ctx->curve_id; 
+    asym_xform->ec.curve_id = pal_ctx->curve_id;
 
-    if (!ecdsa_sess_create(asym_xform, &sess, pal_ctx->devid))
+	if (!ecdsa_sess_create(asym_xform, &sess, pal_ctx->devid))
 		goto err;
 
 	if (rte_crypto_op_attach_asym_session(crypto_op, sess) != 0)
@@ -230,9 +234,12 @@ int pal_ecdsa_verify(pal_ecdsa_ctx_t *pal_ctx)
 	struct rte_crypto_ecdsa_op_param *ecdsa_param = NULL;
 	struct rte_crypto_asym_op *asym_op = NULL;
 	struct rte_crypto_op *crypto_op = NULL;
-  struct rte_crypto_ec_point *cp;
+	struct rte_crypto_ec_point *cp;
 	int rlen;
 	int slen;
+
+	if(!asym_get_valid_devid_qid(&pal_ctx->devid, &pal_ctx->queue))
+		goto err;
 
 	crypto_op = rte_crypto_op_alloc(pools->asym_op_pool,
 					RTE_CRYPTO_OP_TYPE_ASYMMETRIC);
@@ -321,6 +328,8 @@ int pal_ecdsa_ec_point_multiplication( pal_ecdsa_ctx_t *pal_ctx)
   struct rte_crypto_asym_xform *xform;
   int ret = -1;
 
+  if(!asym_get_valid_devid_qid(&pal_ctx->devid, &pal_ctx->queue))
+        return 0;
   /* set up crypto op data structure */
 
   op = rte_crypto_op_alloc(pools->asym_op_pool,

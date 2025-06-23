@@ -24,7 +24,7 @@
 #include "prov/der_ec.h"
 #include "prov.h"
 #include "ec_common.h"
-#include "pal/pal_ecdsa.h"
+#include "pal_ecdsa.h"
 
 #define PCURVES_MAX_PRIME_LEN		72 /* P521 curve */
 #define PCURVES_MAX_DER_SIG_LEN		141
@@ -168,10 +168,6 @@ static inline int ecdsa_sign(int type, const unsigned char *dgst, int dlen,
     uint8_t rdata[PCURVES_MAX_DER_SIG_LEN] = {0};
     uint8_t sdata[PCURVES_MAX_DER_SIG_LEN] = {0};
 
-
-    if(!prov_asym_get_valid_devid_qid(&pal_ctx.devid, &pal_ctx.queue))
-        goto err;
-
     curve_id = get_curve_id(ecgroup);
     if (!curve_id) {
         ECerr(EC_F_ECDH_SIMPLE_COMPUTE_KEY, EC_R_INVALID_CURVE);
@@ -278,9 +274,6 @@ static inline int ecdsa_verify(int type, const unsigned char *dgst, int dgst_len
     BIGNUM *py = BN_new();
     int ret = 0;
     (void)type;
-
-    if(!prov_asym_get_valid_devid_qid(&pal_ctx.devid, &pal_ctx.queue))
-        goto err;
 
     curve_id = get_curve_id(ecgroup);
     if (!curve_id) {

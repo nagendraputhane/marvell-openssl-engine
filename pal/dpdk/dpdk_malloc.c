@@ -2,7 +2,7 @@
  * Copyright (c) 2024 Marvell.
  */
 
-#include "pal.h" 
+#include "pal.h"
 
 extern dpdk_pools_t *pools;
 void * pal_pktbuf_alloc( size_t len, size_t predata_len)

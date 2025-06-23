@@ -12,8 +12,8 @@
 #include <openssl/params.h>
 #include <openssl/proverr.h>
 #include <openssl/rsa.h>	// RSA_*_PADDING macro declarations
-#include "pal/pal.h"
-#include "pal/pal_rsa.h"
+#include "pal.h"
+#include "pal_rsa.h"
 #include "prov.h"
 #include "rsa_kmgmt.h"
 #include "rsa_sig.h"
@@ -252,9 +252,6 @@ static inline int rsa_sign(const unsigned char *from, int flen,
     int ret = 0, priv_sz;
     pal_rsa_ctx_t pal_ctx = {0};
 
-    if(!prov_asym_get_valid_devid_qid(&pal_ctx.dev_id, &pal_ctx.qp_id))
-        return -1;
-
     pal_ctx.padding = ctx->pad_type;
     pal_ctx.async_cb = provider_ossl_handle_async_job;
 
@@ -278,9 +275,6 @@ rsa_verify( unsigned char * decrypt_buf, const unsigned char *sign,
 
     int ret = 0, priv_sz;
     pal_rsa_ctx_t pal_ctx = {0};
-
-    if(!prov_asym_get_valid_devid_qid(&pal_ctx.dev_id, &pal_ctx.qp_id))
-        return -1;
 
     pal_ctx.padding = ctx->pad_type;
     pal_ctx.async_cb = provider_ossl_handle_async_job;

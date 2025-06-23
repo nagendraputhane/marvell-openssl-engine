@@ -20,7 +20,7 @@
 
 #include "prov.h"
 #include "ec_common.h"
-#include "pal/pal_ecdsa.h"
+#include "pal_ecdsa.h"
 
 static OSSL_FUNC_keymgmt_new_fn prov_ec_newdata;
 static OSSL_FUNC_keymgmt_gen_init_fn prov_ec_gen_init;
@@ -306,10 +306,6 @@ int ecdh_keygen(EC_KEY *eckey)
   BIGNUM *py = BN_new();
   pal_ecdsa_ctx_t pal_ctx = {0};
   pal_crypto_curve_id_t curve_id;
-
-
-  if(!prov_asym_get_valid_devid_qid(&pal_ctx.devid, &pal_ctx.queue))
-     goto err;
 
   group = EC_KEY_get0_group((const EC_KEY*)eckey);
   const_priv_key = EC_KEY_get0_private_key((const EC_KEY*)eckey);

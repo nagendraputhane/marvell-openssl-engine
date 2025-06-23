@@ -2,7 +2,8 @@
  * Copyright (c) 2024 Marvell.
  */
 
-#include "pal/pal_cpoly.h"
+#include "pal_cpoly.h"
+#include "defs.h"
 
 extern int cpt_num_cipher_pipeline_requests_in_flight;
 extern dpdk_pools_t *pools;
@@ -14,6 +15,9 @@ int pal_create_cpoly_aead_session(pal_cpoly_ctx_t *pal_ctx,
 					int aad_len, uint8_t reconfigure)
 {
 	int retval;
+
+	if(!sym_get_valid_devid_qid(&pal_ctx->dev_id, &pal_ctx->queue))
+        	return 0;
 
 	struct rte_crypto_sym_xform aead_xform = {
 			.next = NULL,

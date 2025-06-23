@@ -2,7 +2,8 @@
  * Copyright (c) 2024 Marvell.
  */
 
-#include <pal/pal_gcm.h>
+#include <pal_gcm.h>
+#include "defs.h"
 
 extern int cpt_num_cipher_pipeline_requests_in_flight;
 extern dpdk_pools_t *pools;
@@ -16,6 +17,9 @@ int pal_create_aead_session(pal_crypto_aead_algorithm_t algo,
 {
 	struct rte_crypto_sym_xform aead_xform;
 	int retval;
+
+	if(!sym_get_valid_devid_qid(&pal_ctx->dev_id, &pal_ctx->sym_queue))
+        	return 0;
 
 	/* Setup AEAD Parameters */
 	aead_xform.type = RTE_CRYPTO_SYM_XFORM_AEAD;

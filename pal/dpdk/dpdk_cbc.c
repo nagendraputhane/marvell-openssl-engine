@@ -8,7 +8,7 @@
  */
 
 #include "pal_cbc.h"
-
+#include "defs.h"
 
 extern int cpt_num_cipher_pipeline_requests_in_flight;
 extern  dpdk_pools_t *pools;
@@ -236,6 +236,10 @@ int pal_aes_cbc_create_session(pal_cbc_ctx_t *pal_ctx, const unsigned char *key,
 				const unsigned char *iv, int enc, int key_len)
 {
   int ret = 0;
+
+  if(!sym_get_valid_devid_qid(&pal_ctx->dev_id, &pal_ctx->sym_queue))
+        return 0;
+
   if(key != NULL) {
     struct rte_crypto_sym_xform cipher_xform = {
       .next = NULL,

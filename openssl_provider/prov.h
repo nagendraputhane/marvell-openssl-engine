@@ -13,7 +13,7 @@
 #include <prov/provider_util.h>
 #include <openssl/bn.h>
 #include <openssl/ec.h>
-#include "pal/pal.h"
+#include "pal.h"
 
 #define CPT_PROVIDER_DEFAULT_SESSIONS              (128 << 10)
 #define CPT_PROVIDER_DEFAULT_SYM_QP_DESC_COUNT     2048
@@ -48,6 +48,11 @@ extern int asym_dev_id[];
 extern int asym_queues[];
 extern int sym_dev_id[];
 extern int sym_queues[];
+
+extern char prov_name[];
+extern char des_ec[];
+extern char des_rsa[];
+extern char pal_name[];
 
 typedef struct prov_ctx_st {
     const OSSL_CORE_HANDLE *handle;
