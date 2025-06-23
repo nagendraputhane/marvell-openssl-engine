@@ -60,7 +60,19 @@ int sym_create_session(uint16_t dev_id,
 
 bool pal_is_hw_sym_algos_supported(int algo)
 {
-	return true;
+	switch (algo) {
+		case PAL_CRYPTO_CIPHER_AES_CBC:
+			return true;
+		case PAL_CRYPTO_CIPHER_AES_GCM:
+			return false;
+		case PAL_CRYPTO_CIPHER_AES_CBC_HMAC_SHA1:
+			return false;
+		case PAL_CRYPTO_AEAD_CHACHA20_POLY1305:
+			return false;
+		default:
+			engine_log(ENG_LOG_ERR, "Invalid algo\n");
+	}
+	return false;
 }
 
 int sym_session_cleanup(struct dao_lc_cmd_event *event, int dev_id)
