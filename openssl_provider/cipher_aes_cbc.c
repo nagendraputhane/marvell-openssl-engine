@@ -278,12 +278,6 @@ int prov_aes_cbc_block_update(void *vctx, unsigned char *out,
             return 0;
         }
 
-        if (ctx->allocated) {
-            OPENSSL_free(ctx->tlsmac);
-            ctx->allocated = 0;
-            ctx->tlsmac = NULL;
-        }
-
         /* This only fails if padding is publicly invalid */
         *outl = inl;
         if (!ctx->enc
