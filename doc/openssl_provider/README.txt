@@ -51,7 +51,7 @@ I) Dependencies
 
   | a) SDK : Base SDK, provider release supported with. See Release Notes.
   | b) DPDK : Provided in SDK package (Supported versions: 20.11)
-  | c) OpenSSL : openssl >= 3.3.2
+  | c) OpenSSL : openssl >= 3.3.3
   | d) Require ninja, meson utilities.
 
   The SDK is not used on the Intel X86 platform and is optional
@@ -79,8 +79,8 @@ II) Building and Running Instructions
     | - <PACKAGE_DIR> - directory where SDK is untarred
     | - <SDK_PATH> in following subsections refers to path to <PACKAGE_DIR>/base_sdk/sources
     | - <TOOLCHAIN_PATH> refers to <SDK_PATH>/toolchain/marvell-tools-XXX.0/bin
-    | - <OPENSSL_DIR> refers to compiled openssl-3.3.2 directory generated after following
-      openssl-3.3.2 build instructions
+    | - <OPENSSL_DIR> refers to compiled openssl-3.3.3 directory generated after following
+      openssl-3.3.3 build instructions
     | - <DPDK_DIR> refers to directory where dpdk sources are untarred
     | - <PROVIDER_DIR> refers to directory containing Openssl provider sources
     | - <SDK_NAME> is name of SDK , example, SDK10.0-ED1001 while building with SDK10.0-ED1001
@@ -92,11 +92,11 @@ II) Building and Running Instructions
 
     b) Building OpenSSL
 
-        Cross compile openssl-3.3.2.tar.gz package:
+        Cross compile openssl-3.3.3.tar.gz package:
 
-        # tar -zxf openssl-3.3.2.tar.gz
+        # tar -zxf openssl-3.3.3.tar.gz
 
-        # cd openssl-3.3.2
+        # cd openssl-3.3.3
 
         # ./Configure linux-aarch64 --cross-compile-prefix= <TOOLCHAIN_PATH>/aarch64-marvell-linux-gnu-
 
@@ -301,6 +301,7 @@ IV) Supported Features
 
     # cd <OPENSSL_LIB_DIR>/apps
 
+    # export OTX2_BUS=20; export CRYPTO_DRIVER=crypto_cn10k
     # ./openssl s_server -provider dpdk_provider -provider default -cert <CertificateFile> -key <KeyFile> -port 4433
 
   d) Run OpenSSL s_client on peer machine to connect to s_server running
@@ -314,7 +315,10 @@ IV) Supported Features
 
   (See man openssl speed on its usage). Example commands:
 
-  \*Change to <OPENSSL_LIB_DIR>/apps before running these commands.
+  \*Change to <OPENSSL_LIB_DIR>/apps before and set the following
+    environment variables before running the speed application.
+
+    # export OTX2_BUS=20; export CRYPTO_DRIVER=crypto_cn10k
 
   a) Benchmark RSA
 
@@ -358,8 +362,7 @@ IV) Supported Features
 
   k) Benchmark CHACHA20-POLY1305 async mode
 
-	# ./openssl speed -provider dpdk_provider -provider default -elapsed -async_jobs +24 -evp
-	# 	chacha20-poly1305
+    # ./openssl speed -provider dpdk_provider -provider default -elapsed -async_jobs +24 -evp chacha20-poly1305
 
   l) Running openssl speed with -multi option
 
@@ -370,9 +373,9 @@ IV) Supported Features
 
     The limitation causes speed to report higher than actual performance.
 
-    Build openssl 3.3.2 package after applying speed_multi patch in patches directory:
+    Build openssl 3.3.3 package after applying speed_multi patch in patches directory:
 
-      # cd openssl-3.3.2
+      # cd openssl-3.3.3
 
       # patch -p1 < <openssl-provider-directory>/patches/speed_multi.patch
 
@@ -382,5 +385,5 @@ IV) Supported Features
 
 06. Known Issues
 ================
-  a) Multi Call for AES-GCM and Chacha20-Poly1305 not supported
-
+  a) Multi option with speed is broken with following algorithms.
+     - AES-GCM, AES-CBC, ECDH, ECDSA, RSA and CHACHA20-POLY1305
