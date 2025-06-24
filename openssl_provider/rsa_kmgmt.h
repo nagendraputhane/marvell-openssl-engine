@@ -1,3 +1,9 @@
+/* SPDX-License-Identifier: Marvell-MIT
+ * Copyright (c) 2025 Marvell.
+ */
+
+#ifndef __RSA_KMGMT_H__
+#define __RSA_KMGMT_H__
 #include <openssl/bn.h> // For BIGNUM(bn)
 
 /*  Our provider side key object data type */
@@ -31,3 +37,4 @@ prov_rsa_key_len(prov_rsa_key_data *keydata)
 {
 	return keydata->n_len;
 }
+#endif

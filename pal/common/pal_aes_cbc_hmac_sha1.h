@@ -1,5 +1,9 @@
-#ifndef __CBC_HMAC_SHA1__
-#define __CBC_HMAC_SHA1__
+/* SPDX-License-Identifier: Marvell-MIT
+ * Copyright (c) 2025 Marvell.
+ */
+
+#ifndef __PAL_COMMON_AES_CBC_HMAC_SHA1_H__
+#define __PAL_COMMON_AES_CBC_HMAC_SHA1_H__
 
 #include "pal.h"
 #include "pal_cbc.h"

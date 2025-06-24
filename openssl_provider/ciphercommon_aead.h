@@ -2,6 +2,9 @@
  * Copyright (c) 2025 Marvell.
  */
 
+#ifndef __CIPHERCOMMON_AEAD_H__
+#define __CIPHERCOMMON_AEAD_H__
+
 #define AEAD_FLAGS (PROV_CIPHER_FLAG_AEAD | PROV_CIPHER_FLAG_CUSTOM_IV)
 
 #define IMPLEMENT_aead_cipher(alg, lc, UCMODE, flags, kbits, blkbits, ivbits)  \
@@ -38,3 +41,4 @@ const OSSL_DISPATCH prov_##alg##kbits##lc##_functions[] = {                    \
       (void (*)(void))prov_cipher_aead_settable_ctx_params },                  \
     { 0, NULL }                                                                \
 }
+#endif

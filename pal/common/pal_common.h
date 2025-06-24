@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: Marvell-MIT
  * Copyright (c) 2024 Marvell.
  */
-#ifndef __PAL_COMMON_HH__
-#define __PAL_COMMON_HH__
+#ifndef __PAL_COMMON_COMMON_H__
+#define __PAL_COMMON_COMMON_H___
 
 #include "pal.h"
 

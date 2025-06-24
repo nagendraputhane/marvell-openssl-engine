@@ -35,7 +35,7 @@ int pal_plt_init(void)
 
 	argc = sizeof(argv)/sizeof(char *);
 
-	ret = pal_crypto_init(argc, argv, 1, crypto_name);
+	ret = pal_crypto_init(argc, argv, 1, NULL);
 
 	if (ret < 0) {
 		ossl_log(OSSL_LOG_ERR, "Failed in pal_crypto_init\n");

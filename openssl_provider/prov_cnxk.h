@@ -1,6 +1,10 @@
 /* SPDX-License-Identifier: Marvell-MIT
  * Copyright (c) 2025 Marvell.
  */
+
+#ifndef ___PROV_CNXK_H__
+#define ___PROV_CNXK_H__
+
 #define _GNU_SOURCE
 #include <sched.h>
 #include <unistd.h>
@@ -13,8 +17,7 @@
 
 #pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
 
-
-const char *crypto_name;
+extern const char *crypto_name;
 
 static inline int provcpt_hw_init(void)
 {
@@ -39,7 +42,7 @@ static inline int provcpt_hw_init(void)
 	crypto_name = getenv("CRYPTO_DRIVER");
 	if (!crypto_name) {
 		fprintf(stderr, " CRYPTO DRIVER name not defined. Using default (crypto_octeontx2)\n");
-		crypto_name = "crypto_octeontx2";
+		crypto_name = "crypto_cn10k";
 	}
 
 	/* Symmetric device */
@@ -68,4 +71,4 @@ static inline int provcpt_hw_init(void)
 
 	return 0;
 }
-
+#endif

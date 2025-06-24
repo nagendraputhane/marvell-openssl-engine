@@ -2,7 +2,7 @@
  * Copyright (c) 2024 Marvell.
  */
 
-#include "pal/pal_aes_cbc_hmac_sha1.h"
+#include "pal_aes_cbc_hmac_sha1.h"
 #include "cpt_engine.h"
 
 static int cpt_engine_aes_cbc_hmac_sha1_cipher(EVP_CIPHER_CTX *ctx,
@@ -19,8 +19,6 @@ static int cpt_engine_aes_cbc_hmac_sha1_ctrl(EVP_CIPHER_CTX *ctx, int type,
 EVP_CIPHER *_hidden_aes_128_cbc_hmac_sha1;
 EVP_CIPHER *_hidden_aes_256_cbc_hmac_sha1;
 
-extern int sym_dev_id[];
-extern int sym_queues[];
 extern dpdk_pools_t dpdk_pools;
 
 const EVP_CIPHER *cpt_engine_aes_128_cbc_hmac_sha1(void)

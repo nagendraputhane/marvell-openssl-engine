@@ -2,15 +2,14 @@
  * Copyright (c) 2024 Marvell.
  */
 #include "cpt_engine.h"
-#include "pal/pal.h"
-#include "pal/pal_rsa.h"
+#include "pal.h"
+#include "pal_rsa.h"
 #include "cpt_engine_ecdsa.h"
 #include "cpt_engine_rsa.h"
 #include "cpt_engine_malloc.h"
-#include "pal/pal_common.h"
+#include "pal_common.h"
 
-unsigned int dev_in_use = 0;
-char *crypto_drv_name = NULL;
+extern const char *crypto_name;
 OSSL_ASYNC_FD zero_fd;
 
 int dpdkcpt_cipher_nids[] = { NID_aes_128_cbc, NID_aes_256_cbc,
@@ -69,11 +68,6 @@ static FILE* log_fp = NULL;
 static char * cpt_engine_alg_params = NULL;
 static uint16_t pool_cachesz[CPT_ENGINE_MAX_NUM_POOL];
 
-int asym_queues[PAL_MAX_THREADS];
-int sym_queues[PAL_MAX_THREADS];
-int asym_dev_id[PAL_MAX_THREADS];
-int sym_dev_id[PAL_MAX_THREADS];
-unsigned int queues_per_vf[PAL_MAX_CPT_DEVICES] = {0};
 uint32_t cpt_engine_sessions = CPT_ENGINE_DEFAULT_SESSIONS;
 uint32_t cpt_engine_num_mbufs = CPT_ENGINE_DEFAULT_MBUFS;
 uint32_t cpt_engine_num_sym_ops = CPT_ENGINE_DEFAULT_SYM_OPS;
@@ -280,7 +274,7 @@ static int bind_cpt_engine(ENGINE *e)
 	if ((zero_fd = open("/dev/zero", 0)) < 0)
 		return -1;
 
-	ret = pal_crypto_init(cpt_engine_eal_argc, cpt_engine_eal_argv, !disable_eal_init, crypto_drv_name);
+	ret = pal_crypto_init(cpt_engine_eal_argc, cpt_engine_eal_argv, !disable_eal_init, crypto_name);
 	if (ret < 0) {
 		engine_log(ENG_LOG_ERR, "Failed in platform init\n");
 		return 0;
@@ -556,7 +550,7 @@ static int cpt_engine_ctrl(ENGINE *e, int cmd, long numval, void * ptrval, void 
 			cpt_engine_eal_argv[cpt_engine_eal_argc++] = OPENSSL_strdup(vdevstr);
 			cpt_engine_eal_argv[cpt_engine_eal_argc] = NULL;
 		}
-		crypto_drv_name = OPENSSL_strdup(ptrval);
+		crypto_name = OPENSSL_strdup(ptrval);
 		break;
 	case CPT_ENGINE_CTRL_CMD_CPTVF_QUEUES:
 		cpt_engine_queue_conf = OPENSSL_strdup(ptrval);

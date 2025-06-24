@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Marvell-MIT
  * Copyright (c) 2025 Marvell.
  */
+#ifndef __PROV_OSSL_H__
+#define __PROV_OSSL_H__
 
 #define _GNU_SOURCE
 #include <unistd.h>
@@ -39,4 +41,4 @@ static inline int provcpt_hw_init(void)
 
 	return 0;
 }
-
+#endif

@@ -2,6 +2,8 @@
  * Copyright (c) 2025 Marvell.
  */
 
+#ifndef __PAL_LC_DEFS_H__
+#define __PAL_LC_DEFS_H__
 #include <dao_liquid_crypto.h>
 #include "pal_rsa.h"
 
@@ -100,3 +102,4 @@ static inline void pal_sym_session_init(pal_cbc_ctx_t *pal_ctx)
 	memset(&pal_ctx->cry_session, 0, sizeof(pal_ctx->cry_session));
 	memset(&pal_ctx->event, 0, sizeof(pal_ctx->event));
 }
+#endif

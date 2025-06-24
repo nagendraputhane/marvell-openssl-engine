@@ -2,12 +2,9 @@
  * Copyright (c) 2024 Marvell.
  */
 #include "cpt_engine.h"
-#include "pal/pal.h"
-#include "pal/pal_ecdsa.h"
+#include "pal.h"
+#include "pal_ecdsa.h"
 #include <rte_hexdump.h>
-
-extern int asym_dev_id[];
-extern int asym_queues[];
 
 /**
  * Assumes that all the to-be-initialized pointers were set to NULL on function

@@ -8,8 +8,6 @@
 #pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
 
 extern uint16_t hw_offload_pktsz_thresh;
-extern int sym_queues[RTE_MAX_LCORE];
-extern int sym_dev_id[RTE_MAX_LCORE];
 
 static int cpt_engine_aes_cbc_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 				  const unsigned char *in, size_t inl);

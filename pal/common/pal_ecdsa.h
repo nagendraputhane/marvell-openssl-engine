@@ -2,8 +2,8 @@
  * Copyright (c) 2024 Marvell.
  */
 
-#ifndef __PAL_ECDSA_H_
-#define __PAL_ECDSA_H_
+#ifndef __PAL_COMMON_ECDSA_H__
+#define __PAL_COMMON_ECDSA_H__
 
 #include "pal.h"
 #include <openssl/bn.h>

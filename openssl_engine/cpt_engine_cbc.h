@@ -5,7 +5,7 @@
 #ifndef __CPT_ENGINE_CBC_H__
 #define __CPT_ENGINE_CBC_H__
 #include "cpt_engine.h"
-#include "pal/pal_cbc.h"
+#include "pal_cbc.h"
 #define ARMv8_AES_cbc_encrypt aes_v8_cbc_encrypt
 
 typedef struct ossl_cbc_ctx {

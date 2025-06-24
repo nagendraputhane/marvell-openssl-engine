@@ -17,8 +17,6 @@ static int cpt_engine_chacha20_poly1305_cipher(EVP_CIPHER_CTX *ctx, unsigned cha
 static int cpt_engine_chacha20_poly1305_ctrl(EVP_CIPHER_CTX *c, int type,
 		int arg, void *ptr);
 
-extern int sym_dev_id[];
-extern int sym_queues[];
 extern uint16_t hw_offload_pktsz_thresh;
 
 static int chacha_init_key(ossl_cpoly_ctx_t *cpolly_ctx,

@@ -2,8 +2,8 @@
  * Copyright (c) 2024 Marvell.
  */
 
-#ifndef _PAL_GCM_H_
-#define _PAL_GCM_H_
+#ifndef __PAL_COMMON_PAL_GCM_H__
+#define __PAL_COMMON_PAL_GCM_H__
 
 #include "pal.h"
 

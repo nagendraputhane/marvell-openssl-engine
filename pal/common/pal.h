@@ -2,8 +2,8 @@
  * Copyright (c) 2024 Marvell.
  */
 
-#ifndef __PAL_HH__
-#define __PAL_HH__
+#ifndef __PAL_COMMON_PAL_H__
+#define __PAL_COMMON_PAL_H__
 
 #define _GNU_SOURCE
 #include <sched.h>

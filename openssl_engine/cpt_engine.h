@@ -5,7 +5,7 @@
 #ifndef _CPT_ENGINE_H
 #define _CPT_ENGINE_H
 
-#include "pal/pal.h"
+#include "pal.h"
 #include <openssl/async.h>
 #include <openssl/aes.h>
 #include <openssl/engine.h>
@@ -83,6 +83,18 @@
 #define GET_NUM_ASYM_MB_ITEMS_IN_QUEUE              4
 #define GET_NUM_KDF_MB_ITEMS_IN_QUEUE               5
 #define GET_NUM_SYM_MB_ITEMS_IN_QUEUE               6
+
+#define ARMv8_AES_set_encrypt_key aes_v8_set_encrypt_key
+#define ARMv8_AES_encrypt aes_v8_encrypt
+#define ARMv8_AES_set_decrypt_key aes_v8_set_decrypt_key
+#define ARMv8_AES_decrypt aes_v8_decrypt
+
+extern unsigned int queues_per_vf[];
+extern int asym_dev_id[];
+extern int asym_queues[];
+extern int sym_dev_id[];
+extern int sym_queues[];
+extern unsigned int dev_in_use;
 
 int engine_log(uint32_t level, const char *fmt, ...);
 

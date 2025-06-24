@@ -4,7 +4,7 @@
 #ifndef _CPT_ENGINE_CPOLY_H
 #define _CPT_ENGINE_CPOLY_H
 
-#include "pal/pal_cpoly.h"
+#include "pal_cpoly.h"
 
 typedef struct {
 	union {

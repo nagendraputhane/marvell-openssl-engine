@@ -2,8 +2,8 @@
  * Copyright (c) 2024 Marvell.
  */
 
-#ifndef __PAL_CBC_HH__
-#define __PAL_CBC_HH__
+#ifndef __PAL_COMMON_CBC_H__
+#define __PAL_COMMON_CBC_H__
 
 #include "pal.h"
 #include "defs.h"

@@ -2,18 +2,12 @@
  * Copyright (c) 2025 Marvell.
  */
 
+#ifndef __DPDK_DEFS_H__
+#define __DPDK_DEFS_H__
+
 #include "pal.h"
 #include "pal_rsa.h"
 
-#define ARMv8_AES_set_encrypt_key aes_v8_set_encrypt_key
-#define ARMv8_AES_encrypt aes_v8_encrypt
-#define ARMv8_AES_set_decrypt_key aes_v8_set_decrypt_key
-#define ARMv8_AES_decrypt aes_v8_decrypt
-extern const char *crypto_name;
-extern int asym_dev_id[];
-extern int asym_queues[];
-extern int sym_dev_id[];
-extern int sym_queues[];
 #define OTX2_DEV_DOMAIN                 2
 #define OTX2_NUM_ARGS           12
 #define OTX2_NUM_PER_BUS                8
@@ -27,6 +21,12 @@ extern int sym_queues[];
 #define CPT_PROVIDER_DEFAULT_POOL_CACHE_SIZE       512
 #define CPT_PROVIDER_DEFAULT_ASYM_OPS              1024
 #define CPT_PROVIDER_MBUF_CUSTOM_BUF_SIZE       (32 * 1024)
+
+extern const char *crypto_name;
+extern int asym_dev_id[];
+extern int asym_queues[];
+extern int sym_dev_id[];
+extern int sym_queues[];
 
 static inline int asym_get_valid_devid_qid(int *devid, int *queue)
 {
@@ -68,7 +68,6 @@ typedef enum pal_rsa_key_type {
 typedef struct pal_rsa_ctx {
   int dev_id;
   int qp_id;
-  int pad_type;
   int rsa_key_type;
   uint8_t *rsa_n_data;
   uint8_t *rsa_e_data;
@@ -116,3 +115,4 @@ static inline void pal_sym_session_init(pal_cbc_ctx_t *pal_ctx)
 {
 	pal_ctx->cry_session = NULL;
 }
+#endif

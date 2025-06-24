@@ -3,7 +3,7 @@
  */
 #ifndef _CPT_ENGINE_GCM_H_
 #define _CPT_ENGINE_GCM_H_
-#include "pal/pal_gcm.h"
+#include "pal_gcm.h"
 #include "cpt_engine.h"
 
 typedef struct ossl_gcm_ctx

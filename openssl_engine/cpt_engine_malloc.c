@@ -3,7 +3,7 @@
  */
 
 #include "cpt_engine.h"
-#include "pal/pal.h"
+#include "pal.h"
 #include "cpt_engine_malloc.h"
 
 void *cpt_engine_malloc(size_t len, const char *file, int line)

@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: Marvell-MIT
  * Copyright (c) 2025 Marvell.
  */
-
+#ifndef __RSA_SIG_H__
+#define __RSA_SIG_H__
 #define ASN1_SEQUENCE 0x30
 #define ASN1_OCTET_STRING 0x04
 #define ASN1_NULL 0x05
@@ -92,3 +93,5 @@ static int encode_pkcs1(unsigned char **out, size_t *out_len, int type,
     *out_len = dig_info_len;
     return 1;
 }
+
+#endif

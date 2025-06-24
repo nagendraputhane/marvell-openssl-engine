@@ -4,8 +4,8 @@
 
 #include "cpt_engine.h"
 #include "cpt_engine_rsa.h"
-#include "pal/pal.h"
-#include "pal/pal_rsa.h"
+#include "pal.h"
+#include "pal_rsa.h"
 
 #pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
 
@@ -19,9 +19,6 @@
  * RSA implementation
  */
 
-extern int asym_dev_id[];
-extern int asym_queues[];
-
 static int rsa_check_modlen(RSA *rsa)
 {
 	int ret;
@@ -31,7 +28,7 @@ static int rsa_check_modlen(RSA *rsa)
 	RSA_get0_key(rsa, &n, NULL, NULL);
 	plen = BN_num_bytes(n);
 
-	ret = pal_asym_xform_capability_check_modlen(plen);
+	ret = pal_rsa_capability_check_modlen(plen);
 
 	return ret;
 }

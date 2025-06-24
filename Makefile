@@ -12,6 +12,9 @@ ifeq ($(OPENSSL_INSTALL),)
 $(error "Please define OPENSSL_INSTALL path")
 endif
 
+BUILD_TYPE ?= cross
+PAL ?= dpdk
+
 ifeq ($(PAL),lc)
 ifeq ($(DAO_LC_INSTALL),)
 $(error "Please define DAO_LC_INSTALL path")
@@ -35,6 +38,7 @@ CFLAGS = $(shell $(PKG_CONFIG_CMD) --cflags libdpdk)
 CFLAGS += -I$(DPDK_INSTALL)/include
 CFLAGS += -I$(DPDK_INSTALL)/$(shell $(PKG_CONFIG_CMD) --variable=includedir libdpdk)
 CFLAGS += -I$(DAO_LC_INSTALL)/../lib/liquid_crypto
+CFLAGS += -DOSSL_CONF_INIT
 
 LDFLAGS_SHARED = -L$(DPDK_INSTALL)/$(shell $(PKG_CONFIG_CMD) --variable=libdir libdpdk)
 LDFLAGS_SHARED += $(shell $(PKG_CONFIG_CMD) --libs libdpdk)

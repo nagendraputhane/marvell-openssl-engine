@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: Marvell-MIT
  * Copyright (c) 2024 Marvell.
  */
-#ifndef _PAL_CPOLY_H
-#define _PAL_CPOLY_H
+#ifndef __PAL_COMMON_CPOLY_H__
+#define __PAL_COMMON_CPOLY_H__
 
 #include "pal.h"
 
@@ -70,4 +70,4 @@ int pal_chacha20_poly1305_non_tls_crypto(pal_cpoly_ctx_t *pal_ctx, unsigned char
         const unsigned char *in, size_t len, int sym_queue, unsigned char *buf);
 int pal_chacha20_poly1305_tls_1_3_crypto(pal_cpoly_ctx_t *pal_ctx, unsigned char *out,
         const unsigned char *in, size_t len, int sym_queue, unsigned char *buf, void *wctx);
-#endif // _PAL_CPOLY_H
+#endif

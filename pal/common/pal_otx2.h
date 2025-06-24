@@ -2,6 +2,9 @@
  * Copyright (c) 2024 Marvell.
  */
 
+#ifndef __COMMON_PAL_OTX2_H__
+#define __COMMON_PAL_OTX2_H__
+
 #include <stdlib.h>
 #include <rte_common.h>
 #include <rte_version.h>
@@ -68,4 +71,4 @@ static inline char ** pal_get_hw_init_params(int *argc, char *crypto_driver_name
 
 	return argv;
 }
-
+#endif

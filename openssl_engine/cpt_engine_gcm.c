@@ -11,8 +11,6 @@
 						| EVP_CIPH_FLAG_AEAD_CIPHER | EVP_CIPH_GCM_MODE \
 						| EVP_CIPH_FLAG_PIPELINE | EVP_CIPH_CUSTOM_IV_LENGTH )
 
-extern int sym_dev_id[];
-extern int sym_queues[];
 extern uint16_t hw_offload_pktsz_thresh;
 extern int cpt_num_cipher_pipeline_requests_in_flight;
 /* AES-GCM */

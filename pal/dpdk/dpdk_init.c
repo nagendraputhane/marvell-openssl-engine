@@ -3,6 +3,7 @@
  */
 #include "pal.h"
 
+const char *crypto_name = NULL;
 uint8_t cptdevs[PAL_MAX_CPT_DEVICES];
 int sym_valid_dev[PAL_MAX_CPT_SYM_DEVICES];
 int asym_valid_dev[PAL_MAX_CPT_ASYM_DEVICES];

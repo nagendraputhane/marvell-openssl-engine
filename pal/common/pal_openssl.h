@@ -2,6 +2,9 @@
  * Copyright (c) 2024 Marvell.
  */
 
+#ifndef __PAL_COMMON_OPENSSL_H__
+#define __PAL_COMMON_OPENSSL_H__
+
 #define _GNU_SOURCE
 #include <sched.h>
 #include <stdio.h>
@@ -40,3 +43,4 @@ static inline char ** pal_get_hw_init_params(int *argc, char *crypto_driver_name
 
 				return argv;
 }
+#endif

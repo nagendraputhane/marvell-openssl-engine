@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Marvell-MIT
  * Copyright (c) 2025 Marvell.
  */
+#ifndef __CIPHERCOMMON_H__
+#define __CIPHERCOMMON_H__
 
 #include <openssl/params.h>
 #include <openssl/core_dispatch.h>
@@ -131,3 +133,4 @@ IMPLEMENT_generic_cipher_genfn(alg, UCALG, lcmode, UCMODE, flags, kbits,       \
                                blkbits, ivbits, typ)                           \
 IMPLEMENT_generic_cipher_func(alg, UCALG, lcmode, UCMODE, flags, kbits,        \
                               blkbits, ivbits, typ)
+#endif
