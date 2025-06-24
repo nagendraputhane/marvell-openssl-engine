@@ -133,7 +133,7 @@ static void *rsa_dupctx(void *vprsactx)
         dstctx->mdctx = EVP_MD_CTX_new();
         if (dstctx->mdctx == NULL
                 || !EVP_MD_CTX_copy_ex(dstctx->mdctx, srcctx->mdctx)) {
-            fprintf(stderr, "%s:%d:%s(): Error in duplicating mdctx\n");
+            fprintf(stderr, "%s:%d:%s(): Error in duplicating mdctx\n",__FILE__, __LINE__, __func__);
             goto err;
         }
     }
@@ -160,7 +160,7 @@ rsa_signverify_init(void *vctx, void *provkey,
         return 0;
 
     if (provkey == NULL && prsactx->key == NULL) {
-        fprintf(stderr, "%s:%d:%s(): RSA key is not set\n", __func__);
+        fprintf(stderr, "%s:%d:%s(): RSA key is not set\n",__FILE__, __LINE__, __func__);
         return 0;
     }
 
@@ -391,7 +391,7 @@ static int rsa_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 
                     if (p->data == NULL)
                         return 0;
-                    fprintf(stderr, "%s(): rsa pad type %s\n", __func__,
+                    fprintf(stderr, "%s(): rsa pad type %p\n", __func__,
                             p->data);
                     for (i = 0; padding_item[i].id != 0; i++) {
                         if (strcmp(p->data, padding_item[i].ptr)
@@ -459,7 +459,7 @@ static int rsa_digest_sign_final(void *vprsactx, unsigned char *sig,
     if (unlikely
             (prsactx->mdctx == NULL || md_type == NID_undef
              || prsactx->pad_type != RTE_CRYPTO_RSA_PADDING_PKCS1_5)) {
-        fprintf(stderr, "%s:%d%s() Sanity check failed\n");
+        fprintf(stderr, "%s:%d%s() Sanity check failed\n",__FILE__, __LINE__, __func__);
         return 0;
     }
 
@@ -474,7 +474,7 @@ static int rsa_digest_sign_final(void *vprsactx, unsigned char *sig,
 
     if (unlikely(!EVP_DigestFinal_ex(prsactx->mdctx, digest, &dlen))) {
         fprintf(stderr,
-                "%s:%d%s() Error in computing the message digest\n");
+                "%s:%d%s() Error in computing the message digest\n",__FILE__, __LINE__, __func__);
         return 0;
     }
 
@@ -484,7 +484,7 @@ static int rsa_digest_sign_final(void *vprsactx, unsigned char *sig,
     if (md_type == NID_md5_sha1) {
         if (dlen != SSL_SIG_LENGTH) {
             fprintf(stderr,
-                    "%s:%d:%s(): Invalid digest size for MD5+SHA1\n");
+                    "%s:%d:%s(): Invalid digest size for MD5+SHA1\n",__FILE__, __LINE__, __func__);
             return 0;
         }
         encoded_len = SSL_SIG_LENGTH;
@@ -525,13 +525,13 @@ static int rsa_digest_verify_final(void *vprsactx,
     if (unlikely
             (prsactx->mdctx == NULL
              || prsactx->pad_type != RTE_CRYPTO_RSA_PADDING_PKCS1_5)) {
-        fprintf(stderr, "%s:%d%s() Sanity check failed\n");
+        fprintf(stderr, "%s:%d%s() Sanity check failed\n",__FILE__, __LINE__, __func__);
         return 0;
     }
 
     if (!EVP_DigestFinal_ex(prsactx->mdctx, digest_buf, &digest_len)) {
         fprintf(stderr,
-                "%s:%d%s() Error in computing the message digest\n");
+                "%s:%d%s() Error in computing the message digest\n",__FILE__, __LINE__, __func__);
         return 0;
     }
 
@@ -542,7 +542,7 @@ static int rsa_digest_verify_final(void *vprsactx,
     if ((ret < 0) || ((size_t) digest_len > decrypt_len)) {
         fprintf(stderr,
                 "%s:%d:%s(): Error in decrypting the sign (or) mdlen %zu >  dlen %zu\n",
-                __FILE__, __LINE__, __func__, digest_len, decrypt_len);
+                __FILE__, __LINE__, __func__,(size_t) digest_len, decrypt_len);
         return 0;
     }
 

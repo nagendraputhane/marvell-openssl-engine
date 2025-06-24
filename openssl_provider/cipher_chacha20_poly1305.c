@@ -57,7 +57,7 @@ static inline int prov_hw_chacha20_poly1305_init_key(pal_cpoly_ctx_t *pal_ctx,
     int retval = pal_create_cpoly_aead_session(
             pal_ctx, pal_ctx->aad_len, 0);
     if (retval < 0) {
-        fprintf(stderr, "AEAD Sesion creation failed\n", __func__);
+        fprintf(stderr, "%s() AEAD Sesion creation failed\n", __func__);
         return 0;
     }
     return 1;

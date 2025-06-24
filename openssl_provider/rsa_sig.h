@@ -82,7 +82,7 @@ static int encode_pkcs1(unsigned char **out, size_t *out_len, int type,
     dig_info_len = di_prefix_len + m_len;
     dig_info = OPENSSL_malloc(dig_info_len);
     if (unlikely(dig_info == NULL)) {
-	fprintf(stderr, "%s:%d:%s() OPENSSL_malloc failure\n");
+	fprintf(stderr, "%s:%d:%s() OPENSSL_malloc failure\n",__FILE__, __LINE__, __func__);
 	return 0;
     }
     memcpy(dig_info, di_prefix, di_prefix_len);
