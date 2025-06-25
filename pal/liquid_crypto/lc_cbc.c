@@ -95,7 +95,7 @@ int pal_aes_cbc_cipher(pal_cbc_ctx_t *pal_ctx, unsigned char *out, const unsigne
 		{
 			in_buf[i]->data = pal_ctx->input_buf[i];
 			in_buf[i]->total_len = pal_ctx->input_len[i];
-			in_buf[i]->seg_len = pal_ctx->input_len[i];
+			in_buf[i]->frag_len = pal_ctx->input_len[i];
 		}
 		else
 		{
@@ -109,7 +109,7 @@ int pal_aes_cbc_cipher(pal_cbc_ctx_t *pal_ctx, unsigned char *out, const unsigne
 			{
 				long int seg = remaining > LIQUID_CRYPTO_BUF_SZ_MAX ? LIQUID_CRYPTO_BUF_SZ_MAX : remaining;
 				seg_buf->data = (uint8_t *)(pal_ctx->input_buf[i] + copied);
-				seg_buf->seg_len = seg;
+				seg_buf->frag_len = seg;
 				copied += seg;
 				remaining -= seg;
 				if (remaining > 0)
@@ -270,6 +270,7 @@ int pal_aes_cbc_create_session(pal_cbc_ctx_t *pal_ctx, const unsigned char *key,
 		pal_ctx->cry_session.opcode = DAO_LC_SYM_OPCODE_FC;
 		pal_ctx->cry_session.fc.iv_source = DAO_LC_FC_IV_SRC_OP;
 		pal_ctx->cry_session.fc.enc_cipher = DAO_LC_FC_ENC_CIPHER_AES_CBC;
+		pal_ctx->cry_session.iv_len = PAL_AES_CBC_IV_LENGTH;
 		memcpy(pal_ctx->cry_session.fc.encr_key, key, key_len);
 		pal_ctx->cry_session.fc.aes_key_len = (key_len == PAL_AES128_CBC_KEY_LENGTH) ? DAO_LC_FC_AES_KEY_LEN_128 : (key_len == PAL_AES256_CBC_KEY_LENGTH) ? DAO_LC_FC_AES_KEY_LEN_256 : -1;
 		if (pal_ctx->cry_session.fc.aes_key_len == -1)
