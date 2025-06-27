@@ -24,7 +24,8 @@ endif
 ifneq ($(PAL),lc)
 DPDK_PC?=$(DPDK_INSTALL)/usr/local/lib/pkgconfig/
 else
-DPDK_PC?=$(DPDK_INSTALL)/lib/x86_64-linux-gnu/pkgconfig/
+DPDK_PC?=$(firstword $(wildcard $(DPDK_INSTALL)/lib64/pkgconfig) \
+		 $(wildcard $(DPDK_INSTALL)/lib/x86_64-linux-gnu/pkgconfig))
 endif
 
 ifeq ($(BUILD_TYPE),native)
