@@ -40,9 +40,13 @@ This release supports CN93XX, CN96XX and CN98XX platforms.
 ~~~~~~~~~~~~~~~~~~
 Following sources are pre-requisites for OpenSSL Provider solution and should be built beforehand:
 
-- **Driver:** Marvell OCTEON PCIe End Point driver (octeon_ep kernel module).
-- **Software:** DPDK (version >=24.11), DAO (latest), gRPC, libedit and OpenSSL (3.3.3).
-- **Build Tools:** GCC, Make, Meson, Ninja and other standard Linux development tools.
+- Marvell OCTEON PCIe End Point driver
+- DPDK (version >=24.11)
+- gRPC
+- libedit
+- DAO (latest version)
+- OpenSSL (version 3.3.3)
+- Require ninja, meson utilities
 
 4. Building and Installation For Host
 --------------------------------------
@@ -53,8 +57,9 @@ Following subsections cover instructions for building dependent packages.
 
 .. code-block:: shell
 
-	 sudo git clone <openssl repo> --branch openssl-3.3.3
+	 sudo git clone https://github.com/openssl/openssl.git
 	 cd openssl
+	 git checkout openssl-3.3.3
 	 ./Configure
 	 sudo make
 	 sudo make install
@@ -75,17 +80,17 @@ Following subsections cover instructions for building dependent packages.
 
 	 export OPENSSL_INSTALL=/path/to/openssl/install/dir
 	 export DPDK_INSTALL=/path/to/dpdk/install/dir
-	 export DAO_INSTALL=/path/to/dao/install/dir
+	 export DAO_LC_INSTALL=/path/to/dao/install/dir
 	 cd openssl-engine-dpdk
 	 make BUILD_TYPE=native PAL=lc BUILD_PROVIDER=y
 
-**e). Installing LC provider**
+**d). Installing LC provider**
 
 .. code-block:: shell
 
 	 sudo make install PAL=lc
 
-**f). Install OCTEON PCIe End Point driver**
+**e). Install OCTEON PCIe End Point driver**
 
 .. code-block:: shell
 
@@ -142,7 +147,7 @@ This section lists supported features of the OpenSSL provider.
 
 .. code-block:: shell
 
-	 cd script
+	 cd scripts
 	 sudo ./openssl-lc-setup.sh
 
 The script performs the following steps:
@@ -221,8 +226,8 @@ The script performs the following steps:
 
 	- Replace `<CertificateFile>`, `<KeyFile>`, `<ip>`, `<port>`, and `<cipher_name>` with appropriate values.
 	- For example,
-	-    ./openssl s_server -provider lc_provider -provider default -cert certs/server.crt -key certs/private.key -accept 4321
-	-    ./openssl s_client -connect <IP>:4321 -cipher ECDHE-RSA-AES128-SHA -tls1_2
+	-    ./openssl s_server -provider lc_provider -provider default -cert certs/server.crt -key certs/private.key -port 4433
+	-    ./openssl s_client -connect <IP>:4433 -cipher ECDHE-RSA-AES128-SHA
 
 9. Benchmarking OpenSSL LC Provider
 -----------------------------------
