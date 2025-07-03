@@ -64,7 +64,7 @@ bool pal_is_hw_sym_algos_supported(int algo)
 		case PAL_CRYPTO_CIPHER_AES_CBC:
 			return true;
 		case PAL_CRYPTO_CIPHER_AES_GCM:
-			return false;
+			return true;
 		case PAL_CRYPTO_CIPHER_AES_CBC_HMAC_SHA1:
 			return false;
 		case PAL_CRYPTO_AEAD_CHACHA20_POLY1305:

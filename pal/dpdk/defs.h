@@ -87,6 +87,42 @@ typedef struct pal_cbc_ctx {
 	async_job async_cb;
 }pal_cbc_ctx_t;
 
+typedef int (*iv_func_ptr)(void *, int, int, void *);
+
+typedef struct pal_gcm_ctx {
+	struct rte_cryptodev_sym_session *aead_cry_session;
+	struct rte_cryptodev_sym_session *cipher_cry_session;
+	struct rte_crypto_op *op;
+	struct rte_mbuf *ibuf;
+	uint8_t **input_buf;
+	uint8_t **output_buf;
+	long int *input_len;
+	struct rte_crypto_op *ops[SSL_MAX_PIPELINES];
+	struct rte_mbuf *ibufs[SSL_MAX_PIPELINES];
+	char aad_pipe[SSL_MAX_PIPELINES][TLS_AAD_LEN];
+	uint8_t key[32];
+	uint64_t iv[3];
+	uint8_t auth_tag[16];
+	uint32_t aad_cnt;
+	/* Below members are for pipeline */
+	volatile int numpipes;
+	int aad_len;
+	int ivlen;
+	int tls_aad_len;
+	int tls_exp_iv_len;
+	int tls_tag_len;
+	int enc;
+	int sym_queue;
+	int dev_id; /* cpt dev_id*/
+	int hw_offload_pkt_sz_threshold;
+	uint16_t hw_off_pkt_sz_thrsh;
+	uint8_t *aad;
+	uint8_t keylen;
+	uint8_t is_tlsv_1_3;
+	iv_func_ptr iv_cb;
+	async_job async_cb;
+} pal_gcm_ctx_t;
+
 int asym_create_session(uint16_t dev_id, struct rte_crypto_asym_xform *xform,
 	struct rte_cryptodev_asym_session **sess);
 struct rte_cryptodev_sym_session *sym_create_session(uint16_t dev_id,

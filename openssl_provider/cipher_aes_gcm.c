@@ -225,13 +225,11 @@ crypto_gcm_cipher(PROV_AES_GCM_CTX *gcm_ctx, unsigned char *out,
         if (!enc) {
             if (gcm_ctx->taglen < 0)
                 return -1;
-
-            memcpy(prov_ctx->auth_tag,
-                    gcm_ctx->buf, 16);
+            memcpy(prov_ctx->auth_tag, gcm_ctx->buf, EVP_GCM_TLS_TAG_LEN);
             return 1;
         }
-        memcpy(prov_ctx->auth_tag, gcm_ctx->buf, 16);
-        gcm_ctx->taglen = 16;
+        memcpy(prov_ctx->auth_tag, gcm_ctx->buf, EVP_GCM_TLS_TAG_LEN);
+        gcm_ctx->taglen = EVP_GCM_TLS_TAG_LEN;
         /* Don't reuse the IV */
         return 1;
     }
@@ -301,7 +299,7 @@ static inline int prov_hw_aes_gcm_cipher(PROV_AES_GCM_CTX *gcm_ctx, unsigned cha
 static inline int
 gcm_tls1_aad(PROV_AES_GCM_CTX *gcm_ctx,  pal_gcm_ctx_t *pal_ctx, unsigned char *aad, size_t aad_len)
 {
-    unsigned char *buf;
+    unsigned char *buf = NULL;
     size_t len;
 
     if (!prov_is_running() || aad_len != EVP_AEAD_TLS1_AAD_LEN)
@@ -441,7 +439,7 @@ int prov_aes_gcm_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 
     p = OSSL_PARAM_locate_const(params, OSSL_CIPHER_PARAM_AEAD_TAG);
     if (p != NULL) {
-        vp = ctx->aad;
+        vp = gcm_ctx->buf;
         if (!OSSL_PARAM_get_octet_string(p, &vp, EVP_GCM_TLS_TAG_LEN, &sz)) {
             ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
             return 0;

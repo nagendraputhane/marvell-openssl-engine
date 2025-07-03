@@ -8,6 +8,7 @@
 #include "pal_rsa.h"
 
 #define TEST_LC_TIMEOUT 10
+typedef int (*iv_func_ptr)(void *, int, int, void *);
 
 enum ossl_log_error {
 	OSSL_LOG_STDERR = 0,
@@ -85,6 +86,40 @@ typedef struct pal_cbc_ctx {
 	uint8_t numpipes;
 	async_job async_cb;
 } pal_cbc_ctx_t;
+
+typedef struct pal_gcm_ctx {
+	struct dao_lc_sym_ctx aead_cry_session;
+	struct dao_lc_sym_ctx cipher_cry_session;
+	struct dao_lc_cmd_event aead_event;
+	struct dao_lc_cmd_event cipher_event;
+	struct dao_lc_sym_op *op;
+	uint8_t **input_buf;
+	uint8_t **output_buf;
+	long int *input_len;
+	long int *output_len;
+	char aad_pipe[SSL_MAX_PIPELINES][TLS_AAD_LEN];
+	uint8_t key[32];
+	uint64_t iv[3];
+	uint8_t auth_tag[16];
+	uint32_t aad_cnt;
+	/* Below members are for pipeline */
+	volatile int numpipes;
+	int aad_len;
+	int ivlen;
+	int tls_aad_len;
+	int tls_exp_iv_len;
+	int tls_tag_len;
+	int enc;
+	int sym_queue;
+	int dev_id; /* cpt dev_id*/
+	int hw_offload_pkt_sz_threshold;
+	uint16_t hw_off_pkt_sz_thrsh;
+	uint8_t *aad;
+	uint8_t keylen;
+	uint8_t is_tlsv_1_3;
+	iv_func_ptr iv_cb;
+	async_job async_cb;
+} pal_gcm_ctx_t;
 
 int sym_create_session(uint16_t dev_id,
 		struct dao_lc_sym_ctx cry_session,struct dao_lc_cmd_event *event, uint8_t reconfigure, uint64_t sess_cookie);
