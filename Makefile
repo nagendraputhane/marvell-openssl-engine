@@ -95,8 +95,11 @@ OBJS_OPENSSL_PROVIDER += $(OPENSSL_INSTALL)/providers/libcommon.a
 all: build_targets
 
 VERSION_FILE := $(OPENSSL_INSTALL)/VERSION.dat
-MAJOR := $(shell grep '^MAJOR=' $(VERSION_FILE) | cut -d= -f2)
-
+ifeq ($(wildcard $(VERSION_FILE)),)
+	MAJOR := 1
+else
+	MAJOR := $(shell grep '^MAJOR=' $(VERSION_FILE) | cut -d= -f2)
+endif
 BUILD_TYPE ?= cross
 PAL ?= dpdk
 BUILD_ENGINE ?=
@@ -134,8 +137,8 @@ endif
 endif
 
 else
-	@echo "PAL not specified; building all engines and providers"
-	$(MAKE) lc_engine.so lc_provider.so dpdk_engine.so dpdk_provider.so
+	@echo "PAL not specified; building dpdk engine"
+	$(MAKE) dpdk_engine.so
 endif
 
 else ifeq ($(BUILD_TYPE),cross)
@@ -165,18 +168,36 @@ else
 endif
 
 else  # OpenSSL version < 3
-
-ifeq ($(X),lc)
-	@echo "Building lc_provider.so and lc_engine.so for OpenSSL < 3"
-	$(MAKE) lc_provider.so lc_engine.so
-else ifeq ($(X),dpdk)
-	@echo "Building m_engine.so for OpenSSL < 3"
-	$(MAKE) dpdk_engine.so
+ifeq ($(BUILD_TYPE),native)
+ifeq ($(PAL),lc)
+ifeq ($(BUILD_PROVIDER),y)
+	$(error Provider not supported for OpenSSL < 3)
 else
-	@echo "No PAL specified — building both engines for OpenSSL < 3"
-	$(MAKE) lc_engine.so dpdk_engine.so
+	$(MAKE) lc_engine.so
+endif
+else ifeq ($(PAL),dpdk)
+ifeq ($(BUILD_PROVIDER),y)
+	$(error Provider not supported for OpenSSL < 3)
+else
+	$(MAKE) dpdk_engine.so
 endif
 
+endif
+else ifeq ($(BUILD_TYPE),cross)
+ifeq ($(PAL),lc)
+	$(error Cross-compiling not supported for lc)
+else ifeq ($(PAL),dpdk)
+ifeq ($(BUILD_PROVIDER),y)
+	$(error Provider not supported for OpenSSL < 3)
+else
+	$(MAKE) dpdk_engine.so
+endif
+else
+	$(error Unknown or missing PAL during cross-compilation)
+endif
+else
+	$(error Unknown build type: $(BUILD_TYPE))
+endif
 endif
 
 lc_provider.so: $(OBJS_OPENSSL_PROVIDER) $(OBJS_PAL_LC) Makefile $(PC_FILE)
@@ -190,7 +211,7 @@ dpdk_engine.so: $(OBJS_OPENSSL_ENGINE) $(OBJS_PAL_DPDK) Makefile $(PC_FILE)
 ifeq ($(shell [ $(MAJOR) -ge 3 ] && echo yes),yes)
 	$(CC) $(CFLAGS) -shared $(OBJS_OPENSSL_ENGINE) $(OBJS_PAL_DPDK) -o $@ $(LDFLAGS) $(LDFLAGS_SHARED) $(OPENSSL_INSTALL)/crypto/aes/aesv8-armx.S $(OPENSSL_INSTALL)/crypto/chacha/chacha-armv8.S $(OPENSSL_INSTALL)/crypto/chacha/chacha-armv8-sve.S $(OPENSSL_INSTALL)/crypto/poly1305/poly1305.c $(OPENSSL_INSTALL)/crypto/poly1305/poly1305-armv8.S $(OPENSSL_INSTALL)/crypto/armcap.c $(OPENSSL_INSTALL)/crypto/arm64cpuid.S
 else
-	$(CC) $(CFLAGS) -shared $(OBJS_OPENSSL_ENGINE) $(OBJS_PAL_DPDK) -o $@ $(LDFLAGS) $(LDFLAGS_SHARED) $(OPENSSL_INSTALL)/crypto/aes/aesv8-armx.S$(OPENSSL_INSTALL)/crypto/chacha/chacha-armv8.S $(OPENSSL_INSTALL)/crypto/poly1305/poly1305.c $(OPENSSL_INSTALL)/crypto/poly1305/poly1305-armv8.S $(OPENSSL_INSTALL)/crypto/armcap.c $(OPENSSL_INSTALL)/crypto/arm64cpuid.S
+	$(CC) $(CFLAGS) -shared $(OBJS_OPENSSL_ENGINE) $(OBJS_PAL_DPDK) -o $@ $(LDFLAGS) $(LDFLAGS_SHARED) $(OPENSSL_INSTALL)/crypto/aes/aesv8-armx.S $(OPENSSL_INSTALL)/crypto/chacha/chacha-armv8.S $(OPENSSL_INSTALL)/crypto/poly1305/poly1305.c $(OPENSSL_INSTALL)/crypto/poly1305/poly1305-armv8.S $(OPENSSL_INSTALL)/crypto/armcap.c $(OPENSSL_INSTALL)/crypto/arm64cpuid.S
 endif
 
 clean:
