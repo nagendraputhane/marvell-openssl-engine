@@ -707,7 +707,7 @@ static int cpt_engine_chacha20_poly1305_cleanup(EVP_CIPHER_CTX *ctx)
 
   pal_cpoly_ctx_t *pal_ctx = &cpolly_ctx->pal_ctx;
 
-  pal_sym_session_cleanup(pal_ctx->cry_session, pal_ctx->dev_id);
+  pal_sym_session_cpoly_cleanup(pal_ctx);
 
   if (cpolly_ctx->actx)
     OPENSSL_free(cpolly_ctx->actx);

@@ -169,7 +169,7 @@ int cpt_engine_aes_cbc_cleanup(EVP_CIPHER_CTX *ctx)
 {
   ossl_cbc_ctx_t *cbc_ctx = EVP_CIPHER_CTX_get_cipher_data(ctx);
   pal_cbc_ctx_t *pal_ctx = &cbc_ctx->pal_ctx;
-  return pal_aes_cbc_cleanup(pal_ctx);
+  return pal_sym_session_cbc_cleanup(pal_ctx);
 }
 
 int cpt_engine_aes_cbc_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,

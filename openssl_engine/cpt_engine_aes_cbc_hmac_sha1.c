@@ -240,7 +240,7 @@ int cpt_engine_aes_cbc_hmac_sha1_cleanup(EVP_CIPHER_CTX *ctx)
   aes_cbc_hmac_sha1_ctx_t *pal_ctx = (aes_cbc_hmac_sha1_ctx_t *)
     EVP_CIPHER_CTX_get_cipher_data(ctx);
 
-  pal_sym_session_cleanup(pal_ctx->cry_session, dev_id);
+  pal_sym_session_cbc_cleanup(pal_ctx);
   pal_ctx->cry_session = NULL;
 
   return 1;

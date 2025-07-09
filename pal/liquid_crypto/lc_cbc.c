@@ -13,37 +13,6 @@
 
 extern int cpt_num_cipher_pipeline_requests_in_flight;
 
-static int
-sess_event_dequeue(uint8_t dev_id, struct dao_lc_cmd_event *ev)
-{
-	uint64_t timeout;
-	int ret;
-
-	/* Set a timeout of 1 second. */
-	timeout = rte_get_timer_cycles() + rte_get_timer_hz();
-
-	do
-	{
-		ret = dao_liquid_crypto_cmd_event_dequeue(dev_id, ev, 1);
-		if (ret == 1)
-			break;
-
-		if (rte_get_timer_cycles() > timeout)
-		{
-			fprintf(stderr, "Operation timed out\n");
-			break;
-		}
-	} while (ret == 0);
-
-	if (ret != 1)
-	{
-		fprintf(stderr, "Could not dequeue operation\n");
-		return -1;
-	}
-
-	return 0;
-}
-
 int pal_aes_cbc_cipher(pal_cbc_ctx_t *pal_ctx, unsigned char *out, const unsigned char *in,
 						size_t inl, unsigned char *iv, int enc, int sym_queue, void *wctx)
 {
@@ -326,29 +295,7 @@ int pal_aes_cbc_create_session(pal_cbc_ctx_t *pal_ctx, const unsigned char *key,
 	return 1;
 }
 
-int pal_aes_cbc_cleanup(pal_cbc_ctx_t *pal_ctx)
+int pal_sym_session_cbc_cleanup(pal_cbc_ctx_t *pal_ctx)
 {
-	int ret;
-	uint64_t sess_cookie;
-	if (&pal_ctx->cry_session != NULL)
-	{
-		sess_cookie = pal_ctx->event.sess_event.sess_cookie;
-		ret = dao_liquid_crypto_sym_sess_destroy(pal_ctx->dev_id, pal_ctx->event.sess_event.sess_id,
-													sess_cookie);
-		if (ret < 0)
-		{
-			printf("Could not destroy session");
-			return -1;
-		}
-		ret = sess_event_dequeue(pal_ctx->dev_id, &pal_ctx->event);
-		if (ret < 0)
-		{
-			printf("Could not dequeue session event");
-			return -1;
-		}
-	}
-
-	PAL_ASSERT(pal_ctx->event.event_type == DAO_LC_CMD_EVENT_SESS_DESTROY, "Invalid event type");
-	PAL_ASSERT(pal_ctx->event.sess_event.sess_cookie == sess_cookie, "Invalid operation cookie");
-	return 1;
+	return sym_session_cleanup(&pal_ctx->event, pal_ctx->dev_id);
 }

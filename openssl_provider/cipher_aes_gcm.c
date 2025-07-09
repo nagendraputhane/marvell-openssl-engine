@@ -541,6 +541,7 @@ static void prov_aes_gcm_freectx(void *vctx)
     {
         pal_free(ctx->pal_ctx.aad);
         ctx->pal_ctx.aad = NULL;
+        pal_sym_session_gcm_cleanup(&ctx->pal_ctx);
     }
 
     OPENSSL_clear_free(ctx,  sizeof(*ctx));

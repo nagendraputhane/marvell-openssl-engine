@@ -118,3 +118,31 @@ int pal_plt_init()
 
     return 1;
 }
+
+int asym_get_valid_devid_qid(int *devid, int *queue)
+{
+	int thread_id = pal_get_thread_id();
+
+	if(thread_id == -1 || asym_dev_id[thread_id] == -1) {
+		fprintf(stderr, "Invalid thread_id %d\n", thread_id);
+		return 0;
+	}
+
+	*devid = asym_dev_id[thread_id];
+	*queue = asym_queues[thread_id];
+	return 1;
+}
+
+int sym_get_valid_devid_qid(int *devid, int *queue)
+{
+	int thread_id = pal_get_thread_id();
+
+	if(thread_id == -1 || sym_dev_id[thread_id] == -1) {
+		fprintf(stderr, "Invalid thread_id %d\n", thread_id);
+		return 0;
+	}
+
+	*devid = sym_dev_id[thread_id];
+	*queue = sym_queues[thread_id];
+	return 1;
+}

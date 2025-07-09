@@ -685,22 +685,18 @@ int cpt_engine_aes_gcm_cleanup(EVP_CIPHER_CTX *ctx)
 {
 	int retval;
 	ossl_gcm_ctx_t *gcm_ctx = EVP_CIPHER_CTX_get_cipher_data(ctx);
-  pal_gcm_ctx_t *pal_ctx = &gcm_ctx->pal_ctx;
+	pal_gcm_ctx_t *pal_ctx = &gcm_ctx->pal_ctx;
 
 	if (gcm_ctx == NULL)
 		return 0;
 
+	retval = pal_sym_session_gcm_cleanup(pal_ctx);
 
-  retval = pal_sym_session_cleanup(pal_ctx->aead_cry_session, pal_ctx->dev_id);
-  if (retval < 0)
-    engine_log(ENG_LOG_ERR, "FAILED to free AEAD crypto session %d\n", retval);
-  pal_ctx->aead_cry_session = NULL;
+	if (retval < 0)
+		engine_log(ENG_LOG_ERR, "FAILED to free GCM Cipher crypto session %d\n", retval);
 
-  retval = pal_sym_session_cleanup(pal_ctx->cipher_cry_session, pal_ctx->dev_id);
-
-  if (retval < 0)
-    engine_log(ENG_LOG_ERR, "FAILED to free Cipher crypto session %d\n", retval);
-  pal_ctx->cipher_cry_session = NULL;
+	pal_ctx->aead_cry_session = NULL;
+	pal_ctx->cipher_cry_session = NULL;
 
 	if (pal_ctx->aad)
 	{
@@ -708,5 +704,5 @@ int cpt_engine_aes_gcm_cleanup(EVP_CIPHER_CTX *ctx)
 		pal_ctx->aad = NULL;
 	}
 
-  return 1;
+	return 1;
 }

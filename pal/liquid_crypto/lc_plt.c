@@ -13,6 +13,11 @@
 #include "prov_cnxk.h"
 #endif
 
+unsigned int dev_in_use = 0;
+int asym_queues[RTE_MAX_LCORE];
+int sym_queues[RTE_MAX_LCORE];
+int asym_dev_id[RTE_MAX_LCORE];
+int sym_dev_id[RTE_MAX_LCORE];
 
 #pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
 

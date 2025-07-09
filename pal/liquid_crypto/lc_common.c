@@ -72,24 +72,18 @@ int sym_session_cleanup(struct dao_lc_cmd_event *event, int dev_id)
 				event->sess_event.sess_cookie);
 		if (ret < 0) {
 			printf("Could not destroy session");
-			return -1;
+			return 0;
 		}
 		ret = sess_event_dequeue(dev_id, event);
 		if (ret < 0) {
 			printf("Could not dequeue session event");
-			return -1;
+			return 0;
 		}
 
 		PAL_ASSERT(event->event_type == DAO_LC_CMD_EVENT_SESS_DESTROY, "Invalid event type");
 		PAL_ASSERT(event->sess_event.sess_cookie == sess_cookie, "Invalid operation cookie");
 	}
 
-	return 1;
-}
-
-int pal_asym_create_session(uint16_t dev_id, struct rte_crypto_asym_xform *xform,
-			struct rte_cryptodev_asym_session **sess)
-{
 	return 1;
 }
 
@@ -101,4 +95,16 @@ int pal_sym_poll(uint8_t dev_id, uint16_t qp_id, async_job async_cb)
 int pal_asym_poll(uint8_t dev_id, uint16_t qp_id, user_callback_fn callback)
 {
 	return 0;
+}
+
+int pal_get_thread_id()
+{
+	unsigned int lcore = rte_lcore_id();
+
+	if (lcore == LCORE_ID_ANY) {
+		engine_log(ENG_LOG_ERR, "%s: lcore :%d\n", __FUNCTION__, lcore);
+		return -1;
+	}
+
+	return lcore;
 }

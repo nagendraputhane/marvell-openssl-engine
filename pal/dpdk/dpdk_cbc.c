@@ -190,33 +190,13 @@ free_resources:
   return ret;
 }
 
-int pal_aes_cbc_cleanup(pal_cbc_ctx_t *pal_ctx)
+int pal_sym_session_cbc_cleanup(pal_cbc_ctx_t *pal_ctx)
 {
-  int retval;
+  int ret = sym_session_cleanup(pal_ctx->cry_session, pal_ctx->dev_id);
+  if (ret == 1)
+    pal_ctx->cry_session = NULL;
 
-  if (pal_ctx->cry_session != NULL) {
-#if RTE_VERSION < RTE_VERSION_NUM(22, 11, 0, 99)
-    retval = rte_cryptodev_sym_session_clear(
-        pal_ctx->dev_id, (struct rte_cryptodev_sym_session *)
-        pal_ctx->cry_session);
-    if (retval < 0)
-      engine_log(ENG_LOG_ERR, "FAILED to clear session. ret=%d\n",
-          retval);
-    retval = rte_cryptodev_sym_session_free(
-        (struct rte_cryptodev_sym_session *)
-        pal_ctx->cry_session);
-#else
-    retval = rte_cryptodev_sym_session_free(pal_ctx->dev_id,
-        (struct rte_cryptodev_sym_session *)
-        pal_ctx->cry_session);
-#endif
-    if (retval < 0)
-      engine_log(ENG_LOG_ERR, "FAILED to free session. ret=%d\n",
-          retval);
-  }
-  pal_ctx->cry_session = NULL;
-
-  return 1;
+    return ret;
 }
 
 /**

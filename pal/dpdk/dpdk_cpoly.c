@@ -565,3 +565,9 @@ err:
 
     return rv;
 }
+
+int pal_sym_session_cpoly_cleanup(pal_cpoly_ctx_t *pal_ctx)
+{
+	sym_session_cleanup(pal_ctx->cry_session, pal_ctx->dev_id);
+	return 1;
+}

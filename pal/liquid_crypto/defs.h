@@ -97,7 +97,7 @@ static inline int sym_get_valid_devid_qid(int *devid, int *queue)
 	return 1;
 }
 
-static inline void pal_sym_session_init(pal_cbc_ctx_t *pal_ctx)
+static inline void pal_sym_session_cbc_init(pal_cbc_ctx_t *pal_ctx)
 {
 	memset(&pal_ctx->cry_session, 0, sizeof(pal_ctx->cry_session));
 	memset(&pal_ctx->event, 0, sizeof(pal_ctx->event));

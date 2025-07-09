@@ -34,40 +34,6 @@ typedef struct dpdk_pools {
 #endif
 } dpdk_pools_t;
 
-extern const char *crypto_name;
-extern int asym_dev_id[];
-extern int asym_queues[];
-extern int sym_dev_id[];
-extern int sym_queues[];
-
-static inline int asym_get_valid_devid_qid(int *devid, int *queue)
-{
-	int thread_id = pal_get_thread_id();
-
-	if(thread_id == -1 || asym_dev_id[thread_id] == -1) {
-		fprintf(stderr, "Invalid thread_id %d\n", thread_id);
-		return 0;
-	}
-
-	*devid = asym_dev_id[thread_id];
-	*queue = asym_queues[thread_id];
-	return 1;
-}
-
-static inline int sym_get_valid_devid_qid(int *devid, int *queue)
-{
-	int thread_id = pal_get_thread_id();
-
-	if(thread_id == -1 || sym_dev_id[thread_id] == -1) {
-		fprintf(stderr, "Invalid thread_id %d\n", thread_id);
-		return 0;
-	}
-
-	*devid = sym_dev_id[thread_id];
-	*queue = sym_queues[thread_id];
-	return 1;
-}
-
 typedef enum pal_rsa_key_type {
 	PAL_RSA_KEY_TYPE_EXP = RTE_RSA_KEY_TYPE_EXP,
 #if RTE_VERSION >= RTE_VERSION_NUM(22, 11, 0, 99)
@@ -122,9 +88,11 @@ struct rte_cryptodev_sym_session *sym_create_session(uint16_t dev_id,
 	struct rte_crypto_sym_xform *xform,  uint8_t reconfigure,
 	struct rte_cryptodev_sym_session *ses);
 int sym_session_cleanup(struct rte_cryptodev_sym_session *session, int dev_id);
-
-static inline void pal_sym_session_init(pal_cbc_ctx_t *pal_ctx)
+int asym_get_valid_devid_qid(int *devid, int *queue);
+int sym_get_valid_devid_qid(int *devid, int *queue);
+static inline void pal_sym_session_cbc_init(pal_cbc_ctx_t *pal_ctx)
 {
 	pal_ctx->cry_session = NULL;
 }
+
 #endif

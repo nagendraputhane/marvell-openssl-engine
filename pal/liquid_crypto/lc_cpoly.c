@@ -54,3 +54,8 @@ int pal_chacha20_poly1305_tls_1_3_crypto(pal_cpoly_ctx_t *pal_ctx, unsigned char
 {
 	return 0;
 }
+
+int pal_sym_session_cpoly_cleanup(pal_cpoly_ctx_t *pal_ctx)
+{
+	return 1;
+}

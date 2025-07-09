@@ -731,3 +731,10 @@ err:
     pal_ctx->aad_len = -1;
     return rv;
 }
+
+int pal_sym_session_gcm_cleanup(pal_gcm_ctx_t *pal_ctx)
+{
+        sym_session_cleanup(pal_ctx->aead_cry_session, pal_ctx->dev_id);
+        sym_session_cleanup(pal_ctx->cipher_cry_session, pal_ctx->dev_id);
+	return 1;
+}

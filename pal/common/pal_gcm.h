@@ -66,4 +66,5 @@ int pal_create_aead_session(pal_crypto_aead_algorithm_t algo,
 			       pal_gcm_ctx_t *pal_ctx, int aad_len, uint8_t reconfigure);
 int pal_create_cipher_session(pal_crypto_cipher_algorithm_t algo,
 				pal_gcm_ctx_t *pal_ctx);
+int pal_sym_session_gcm_cleanup(pal_gcm_ctx_t *pal_ctx);
 #endif /* _PAL_GCM_H_ */

@@ -127,7 +127,7 @@ static void *prov_aes_cbc_newctx(void *provctx, size_t kbits)
     cbc_ctx->blocksize = PROV_CIPHER_AES256_CBC_BLKBITS / 8;
     cbc_ctx->pal_ctx.numpipes = 0;
     cbc_ctx->allocated = 1;
-    pal_sym_session_init(&cbc_ctx->pal_ctx);
+    pal_sym_session_cbc_init(&cbc_ctx->pal_ctx);
     if (provctx != NULL)
         cbc_ctx->libctx = PROV_LIBCTX_OF(provctx);
     return cbc_ctx;
@@ -141,7 +141,7 @@ void prov_aes_cbc_freectx(void *vctx)
         OPENSSL_free(ctx->tlsmac);
         ctx->allocated = 0;
         ctx->tlsmac = NULL;
-        pal_aes_cbc_cleanup(&ctx->pal_ctx);
+        pal_sym_session_cbc_cleanup(&ctx->pal_ctx);
     }
 
     OPENSSL_clear_free(ctx,  sizeof(*ctx));

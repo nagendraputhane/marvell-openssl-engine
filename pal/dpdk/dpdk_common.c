@@ -91,9 +91,11 @@ int sym_session_cleanup(struct rte_cryptodev_sym_session *session, int dev_id)
 #else
 		retval = rte_cryptodev_sym_session_free(dev_id, session);
 #endif
-		if (retval < 0)
+		if (retval < 0){
 			engine_log(ENG_LOG_ERR, "FAILED to free session. ret=%d\n",
 				retval);
+			return 0;
+		}
 	}
 
 	return 1;

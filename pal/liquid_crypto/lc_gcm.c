@@ -81,3 +81,8 @@ int pal_crypto_gcm_tls_1_3_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 {
 	return 0;
 }
+
+int pal_sym_session_gcm_cleanup(pal_gcm_ctx_t *pal_ctx)
+{
+	return 1;
+}
