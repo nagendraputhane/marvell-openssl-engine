@@ -692,7 +692,7 @@ int cpt_engine_aes_gcm_cleanup(EVP_CIPHER_CTX *ctx)
 
 	retval = pal_sym_session_gcm_cleanup(pal_ctx);
 
-	if (retval < 0)
+	if (retval <= 0)
 		engine_log(ENG_LOG_ERR, "FAILED to free GCM Cipher crypto session %d\n", retval);
 
 	pal_ctx->aead_cry_session = NULL;

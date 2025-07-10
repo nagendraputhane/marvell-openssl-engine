@@ -734,7 +734,10 @@ err:
 
 int pal_sym_session_gcm_cleanup(pal_gcm_ctx_t *pal_ctx)
 {
-        sym_session_cleanup(pal_ctx->aead_cry_session, pal_ctx->dev_id);
-        sym_session_cleanup(pal_ctx->cipher_cry_session, pal_ctx->dev_id);
-	return 1;
+	int retval;
+
+        retval = sym_session_cleanup(pal_ctx->aead_cry_session, pal_ctx->dev_id);
+        retval &= sym_session_cleanup(pal_ctx->cipher_cry_session, pal_ctx->dev_id);
+
+	return retval;
 }
