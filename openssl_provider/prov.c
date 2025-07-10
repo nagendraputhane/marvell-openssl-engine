@@ -269,6 +269,7 @@ static const OSSL_ALGORITHM *prov_query(void *provctx, int operation_id,
 
 static void prov_teardown(void *provctx)
 {
+    pal_crypto_uninit();
     prov_ctx_free(provctx);
 }
 

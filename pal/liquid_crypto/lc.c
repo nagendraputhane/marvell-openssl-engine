@@ -208,3 +208,26 @@ void pal_get_provider_name(char *name, int len)
 	strncpy(name, "OPENSSL LC PROVIDER", len - 1);
 	name[len - 1] = '\0';
 }
+
+void pal_crypto_uninit()
+{
+	struct dao_lc_info *info;
+	uint8_t dev_id;
+
+	info = &glb_params.info;
+
+	for (dev_id = 0; dev_id < info->nb_dev; dev_id++) {
+		if (info->nb_qp[dev_id] == 0)
+			continue;
+		dao_liquid_crypto_dev_stop(dev_id);
+	}
+
+	for (dev_id = 0; dev_id < info->nb_dev; dev_id++) {
+		if (info->nb_qp[dev_id] == 0)
+			continue;
+		dao_liquid_crypto_dev_destroy(dev_id);
+	}
+
+	dao_liquid_crypto_fini();
+	rte_eal_cleanup();
+}
