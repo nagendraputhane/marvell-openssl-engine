@@ -51,14 +51,15 @@ typedef struct pal_aes_cbc_hmac_sha1_ctx {
 	long *input_len;
   cbc_iv_callback iv_cb;
   async_job async_cb;
-} aes_cbc_hmac_sha1_ctx_t;
+} pal_aes_cbc_hmac_sha1_ctx_t;
 
-int pal_aes_cbc_hmac_sha1_cipher(aes_cbc_hmac_sha1_ctx_t *pal_ctx, unsigned char *out,
+int pal_aes_cbc_hmac_sha1_cipher(pal_aes_cbc_hmac_sha1_ctx_t *pal_ctx, unsigned char *out,
 			                           const unsigned char *in, size_t inl,
                                  int sym_queue, int);
 
-int pal_aes_cbc_hmac_sha1_create_session(aes_cbc_hmac_sha1_ctx_t *pal_ctx,
+int pal_aes_cbc_hmac_sha1_create_session(pal_aes_cbc_hmac_sha1_ctx_t *pal_ctx,
 		const unsigned char *key, const unsigned char *iv,
 		int enc, int key_len);
+int pal_sym_session_cbc_hmac_sha1_cleanup(pal_aes_cbc_hmac_sha1_ctx_t *pal_ctx);
 
 #endif // __CBC_HMAC_SHA1__

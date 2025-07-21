@@ -45,7 +45,7 @@ const EVP_CIPHER *cpt_engine_aes_128_cbc_hmac_sha1(void)
             cpt_engine_aes_cbc_hmac_sha1_ctrl) ||
           !EVP_CIPHER_meth_set_impl_ctx_size(
             _hidden_aes_128_cbc_hmac_sha1,
-            sizeof(aes_cbc_hmac_sha1_ctx_t))) {
+            sizeof(pal_aes_cbc_hmac_sha1_ctx_t))) {
         EVP_CIPHER_meth_free(_hidden_aes_128_cbc_hmac_sha1);
         _hidden_aes_128_cbc_hmac_sha1 = NULL;
       }
@@ -79,7 +79,7 @@ const EVP_CIPHER *cpt_engine_aes_256_cbc_hmac_sha1(void)
             cpt_engine_aes_cbc_hmac_sha1_ctrl) ||
           !EVP_CIPHER_meth_set_impl_ctx_size(
             _hidden_aes_256_cbc_hmac_sha1,
-            sizeof(aes_cbc_hmac_sha1_ctx_t))) {
+            sizeof(pal_aes_cbc_hmac_sha1_ctx_t))) {
         EVP_CIPHER_meth_free(_hidden_aes_256_cbc_hmac_sha1);
         _hidden_aes_256_cbc_hmac_sha1 = NULL;
       }
@@ -104,7 +104,7 @@ int cpt_engine_aes128_cbc_hmac_sha1_init_key(EVP_CIPHER_CTX *ctx,
     const unsigned char *key, const unsigned char *iv, int enc)
 {
 
-  aes_cbc_hmac_sha1_ctx_t *pal_ctx =(aes_cbc_hmac_sha1_ctx_t *)
+  pal_aes_cbc_hmac_sha1_ctx_t *pal_ctx =(pal_aes_cbc_hmac_sha1_ctx_t *)
     EVP_CIPHER_CTX_get_cipher_data(ctx);
 
   pal_ctx->enc = enc;
@@ -118,7 +118,7 @@ int cpt_engine_aes256_cbc_hmac_sha1_init_key(EVP_CIPHER_CTX *ctx,
     const unsigned char *key, const unsigned char *iv, int enc)
 {
 
-  aes_cbc_hmac_sha1_ctx_t *pal_ctx =(aes_cbc_hmac_sha1_ctx_t *)
+  pal_aes_cbc_hmac_sha1_ctx_t *pal_ctx =(pal_aes_cbc_hmac_sha1_ctx_t *)
     EVP_CIPHER_CTX_get_cipher_data(ctx);
 
   pal_ctx->enc = enc;
@@ -131,8 +131,8 @@ int cpt_engine_aes256_cbc_hmac_sha1_init_key(EVP_CIPHER_CTX *ctx,
 int cpt_engine_aes_cbc_hmac_sha1_ctrl(EVP_CIPHER_CTX *ctx, int type,
     int arg, void *ptr)
 {
-  aes_cbc_hmac_sha1_ctx_t *pal_ctx =
-    (aes_cbc_hmac_sha1_ctx_t *)
+  pal_aes_cbc_hmac_sha1_ctx_t *pal_ctx =
+    (pal_aes_cbc_hmac_sha1_ctx_t *)
     EVP_CIPHER_CTX_get_cipher_data(ctx);
 
   if (pal_ctx == NULL)
@@ -216,7 +216,7 @@ int cpt_engine_aes_cbc_hmac_sha1_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     const unsigned char *in, size_t inl)
 {
   int iv_len = 0;
-  aes_cbc_hmac_sha1_ctx_t *pal_ctx = (aes_cbc_hmac_sha1_ctx_t *)
+  pal_aes_cbc_hmac_sha1_ctx_t *pal_ctx = (pal_aes_cbc_hmac_sha1_ctx_t *)
     EVP_CIPHER_CTX_get_cipher_data(ctx);
   unsigned int thread_id = pal_get_thread_id();
 
@@ -237,10 +237,10 @@ int cpt_engine_aes_cbc_hmac_sha1_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 int cpt_engine_aes_cbc_hmac_sha1_cleanup(EVP_CIPHER_CTX *ctx)
 {
   int dev_id = sym_dev_id[pal_get_thread_id()];
-  aes_cbc_hmac_sha1_ctx_t *pal_ctx = (aes_cbc_hmac_sha1_ctx_t *)
+  pal_aes_cbc_hmac_sha1_ctx_t *pal_ctx = (pal_aes_cbc_hmac_sha1_ctx_t *)
     EVP_CIPHER_CTX_get_cipher_data(ctx);
 
-  pal_sym_session_cbc_cleanup(pal_ctx);
+  pal_sym_session_cbc_hmac_sha1_cleanup(pal_ctx);
   pal_ctx->cry_session = NULL;
 
   return 1;

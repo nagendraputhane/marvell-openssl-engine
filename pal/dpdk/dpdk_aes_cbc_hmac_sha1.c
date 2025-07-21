@@ -11,7 +11,7 @@
 
 extern dpdk_pools_t *pools;
 
-int aes_cbc_hmac_sha1_setup_session(aes_cbc_hmac_sha1_ctx_t *pal_ctx)
+int aes_cbc_hmac_sha1_setup_session(pal_aes_cbc_hmac_sha1_ctx_t *pal_ctx)
 {
 	struct rte_crypto_sym_xform cipher_xform = {
 		.next = NULL,
@@ -52,7 +52,7 @@ int aes_cbc_hmac_sha1_setup_session(aes_cbc_hmac_sha1_ctx_t *pal_ctx)
 	return 1;
 }
 
-int pal_aes_cbc_hmac_sha1_create_session(aes_cbc_hmac_sha1_ctx_t *pal_ctx,
+int pal_aes_cbc_hmac_sha1_create_session(pal_aes_cbc_hmac_sha1_ctx_t *pal_ctx,
 		const unsigned char *key, const unsigned char *iv,
 		int enc, int key_len)
 {
@@ -102,7 +102,7 @@ pktmbuf_iova_offset(struct rte_mbuf *mbuf, int offset)
 	return rte_pktmbuf_iova_offset(m, offset);
 }
 
-int pal_aes_cbc_hmac_sha1_cipher(aes_cbc_hmac_sha1_ctx_t *pal_ctx, unsigned char *out,
+int pal_aes_cbc_hmac_sha1_cipher(pal_aes_cbc_hmac_sha1_ctx_t *pal_ctx, unsigned char *out,
 			                           const unsigned char *in, size_t inl,
                                  int sym_queue, int iv_len)
 {
@@ -386,4 +386,13 @@ int pal_aes_cbc_hmac_sha1_cipher(aes_cbc_hmac_sha1_ctx_t *pal_ctx, unsigned char
 	status_ptr = NULL;
 
 	return 1;
+}
+
+int pal_sym_session_cbc_hmac_sha1_cleanup(pal_aes_cbc_hmac_sha1_ctx_t *pal_ctx)
+{
+  int ret = sym_session_cleanup(pal_ctx->cry_session, pal_ctx->dev_id);
+  if (ret == 1)
+    pal_ctx->cry_session = NULL;
+
+    return ret;
 }
