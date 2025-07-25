@@ -7,6 +7,11 @@
 
 #include "pal.h"
 #include "pal_rsa.h"
+#if defined(CRYPTO_A80X0)
+#include "dpdk_a80x0.h"
+#elif defined(OSSL_PMD)
+#include "dpdk_openssl.h"
+#endif
 
 #define OTX2_DEV_DOMAIN                 2
 #define OTX2_NUM_ARGS           12

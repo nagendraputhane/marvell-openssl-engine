@@ -7,11 +7,6 @@
 #include <sched.h>
 #include "pal.h"
 #include "defs.h"
-#ifdef OSSL_PMD
-#include "prov_ossl.h"
-#else
-#include "prov_cnxk.h"
-#endif
 
 unsigned int dev_in_use = 0;
 int asym_queues[RTE_MAX_LCORE];

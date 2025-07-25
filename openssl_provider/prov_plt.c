@@ -6,12 +6,8 @@
 #include <fcntl.h>
 
 #include "prov.h"
-#ifdef OSSL_PMD
-#include "prov_ossl.h"
-#else
-#include "prov_cnxk.h"
-#endif
 #include "pal.h"
+
 
 OSSL_ASYNC_FD zero_fd;
 

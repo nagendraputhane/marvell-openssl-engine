@@ -14,6 +14,7 @@ endif
 
 BUILD_TYPE ?= cross
 PAL ?= dpdk
+OTX2 ?= y
 
 ifeq ($(PAL),lc)
 ifeq ($(DAO_LC_INSTALL),)
@@ -60,7 +61,6 @@ CFLAGS += $(WERROR_FLAGS)
 CFLAGS += -I$(OPENSSL_INSTALL)/include -I$(OPENSSL_INSTALL)/crypto/modes/ -I$(OPENSSL_INSTALL)/crypto/ -I$(OPENSSL_INSTALL)/crypto/evp/
 CFLAGS += -I$(OPENSSL_INSTALL)/include -I$(OPENSSL_INSTALL)/providers/common/include -I$(OPENSSL_INSTALL)/providers/implementations/include
 
-OTX2 ?= y
 ifeq ($(OTX2),y)
 CFLAGS += -DCRYPTO_OCTEONTX2
 else ifeq ($(A80X0),y)
@@ -105,8 +105,7 @@ ifeq ($(wildcard $(VERSION_FILE)),)
 else
 	MAJOR := $(shell grep '^MAJOR=' $(VERSION_FILE) | cut -d= -f2)
 endif
-BUILD_TYPE ?= cross
-PAL ?= dpdk
+
 BUILD_ENGINE ?=
 BUILD_PROVIDER ?=
 

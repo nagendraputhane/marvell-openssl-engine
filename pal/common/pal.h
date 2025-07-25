@@ -26,11 +26,8 @@
 
 #if defined CRYPTO_OCTEONTX2
 #include "pal_otx2.h"
-#elif defined(CRYPTO_A80X0)
-#include "pal_a80x0.h"
-#else
-#include "pal_openssl.h"
 #endif
+
 
 #define OCTEON_CACHE_LINE_SIZE 128
 #define SSL_MAX_PIPELINES	32
