@@ -64,6 +64,7 @@ prov_hw_aes_gcm_init_key(PROV_AES_GCM_CTX *gcm_ctx, const unsigned char *key,
         int key_len, pal_gcm_ctx_t *pal_ctx)
 {
     int retval;
+    uint8_t reconf = 0;
 
     if (key == NULL)
         return 1;
@@ -71,22 +72,28 @@ prov_hw_aes_gcm_init_key(PROV_AES_GCM_CTX *gcm_ctx, const unsigned char *key,
     if(!prov_sym_get_valid_devid_qid(&pal_ctx->dev_id, &pal_ctx->sym_queue))
         return 0;
 
-    pal_ctx->keylen = key_len;
-    memcpy(pal_ctx->key, key, key_len);
-    gcm_ctx->key_set = 1;
+    if(memcmp(pal_ctx->key, key, key_len) != 0) {
 
-    retval = pal_create_aead_session(PAL_CRYPTO_AEAD_AES_GCM,
-            pal_ctx, EVP_AEAD_TLS1_AAD_LEN, 0);
-    if (retval < 0) {
-        engine_log(ENG_LOG_ERR, "AEAD Sesion creation failed.\n");
-        return 0;
-    }
+        if(gcm_ctx->key_set)
+	        reconf = 1;
 
-    retval = pal_create_cipher_session(PAL_CRYPTO_CIPHER_AES_CTR,
-            pal_ctx);
-    if (retval < 0) {
-        engine_log(ENG_LOG_ERR, "Cipher Sesion creation failed.\n");
-        return 0;
+        pal_ctx->keylen = key_len;
+        memcpy(pal_ctx->key, key, key_len);
+        gcm_ctx->key_set = 1;
+
+        retval = pal_create_aead_session(PAL_CRYPTO_AEAD_AES_GCM,
+            pal_ctx, EVP_AEAD_TLS1_AAD_LEN, reconf);
+        if (retval < 0) {
+            engine_log(ENG_LOG_ERR, "AEAD Sesion creation failed.\n");
+            return 0;
+        }
+
+        retval = pal_create_cipher_session(PAL_CRYPTO_CIPHER_AES_CTR,
+            pal_ctx, reconf);
+        if (retval < 0) {
+            engine_log(ENG_LOG_ERR, "Cipher Sesion creation failed.\n");
+            return 0;
+        }
     }
 
     pal_ctx->numpipes = 0;

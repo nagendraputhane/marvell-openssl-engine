@@ -43,7 +43,7 @@ int pal_create_aead_session(pal_crypto_aead_algorithm_t algo,
  * Create CIPHER Session for Crypto operation only
  */
 int pal_create_cipher_session( pal_crypto_cipher_algorithm_t algo,
-				                       pal_gcm_ctx_t *pal_ctx)
+				                       pal_gcm_ctx_t *pal_ctx, uint8_t reconfigure)
 {
 	struct rte_crypto_sym_xform cipher_xform = {
 		.next = NULL,
@@ -57,7 +57,7 @@ int pal_create_cipher_session( pal_crypto_cipher_algorithm_t algo,
 	};
 	cipher_xform.cipher.key.data = (uint8_t *)pal_ctx->key;
 
-	pal_ctx->cipher_cry_session = sym_create_session( pal_ctx->dev_id, &cipher_xform, 0, NULL);
+	pal_ctx->cipher_cry_session = sym_create_session( pal_ctx->dev_id, &cipher_xform, reconfigure, pal_ctx->cipher_cry_session);
 
 	return 0;
 }

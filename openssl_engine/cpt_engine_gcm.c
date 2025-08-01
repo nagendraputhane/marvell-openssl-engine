@@ -86,55 +86,58 @@ const EVP_CIPHER *cpt_engine_aes_256_gcm(void)
 	return _hidden_aes_256_gcm;
 }
 
-static inline int
-engine_aes_gcm_session_create(ossl_gcm_ctx_t *gcm_ctx,
-                             const unsigned char *key,
-			                       const unsigned char *iv,
-                             int key_len)
+static inline int engine_aes_gcm_session_create(ossl_gcm_ctx_t *gcm_ctx,
+                                                const unsigned char *key,
+                                                const unsigned char *iv,
+                                                int key_len)
 {
-  int retval  = 0;
-  pal_gcm_ctx_t *pal_ctx = &gcm_ctx->pal_ctx;
+	int retval = 0;
+	pal_gcm_ctx_t *pal_ctx = &gcm_ctx->pal_ctx;
+	uint8_t reconf = 0;
 
-	if (iv == NULL && key == NULL)
+	if (key == NULL && iv == NULL)
 		return 1;
 
+	/* If key is provided */
 	if (key != NULL) {
-		pal_ctx->keylen = key_len;
-		memcpy(pal_ctx->key, key, key_len);
-		gcm_ctx->key_set = 1;
+		/* Check if key has changed */
+		if (memcmp(pal_ctx->key, key, key_len) != 0){
+			if(gcm_ctx->key_set)
+          reconf = 1;
+			pal_ctx->keylen = key_len;
+			memcpy(pal_ctx->key, key, key_len);
+			gcm_ctx->key_set = 1;
 
-		ARMv8_AES_set_encrypt_key(key, key_len * 8, &gcm_ctx->ks.ks);
-		CRYPTO_gcm128_init(&gcm_ctx->gcm, &gcm_ctx->ks, (block128_f) ARMv8_AES_encrypt);
-		gcm_ctx->ctr = (ctr128_f) ARMv8_AES_ctr32_encrypt_blocks;
+			/* Initialize AES key schedule and GCM context */
+			ARMv8_AES_set_encrypt_key(key, key_len * 8, &gcm_ctx->ks.ks);
+			CRYPTO_gcm128_init(&gcm_ctx->gcm, &gcm_ctx->ks, (block128_f) ARMv8_AES_encrypt);
+			gcm_ctx->ctr = (ctr128_f) ARMv8_AES_ctr32_encrypt_blocks;
 
-		retval = pal_create_aead_session(PAL_CRYPTO_AEAD_AES_GCM,
-						pal_ctx, EVP_AEAD_TLS1_AAD_LEN, 0);
-		if (retval < 0) {
-			engine_log(ENG_LOG_ERR, "AEAD Sesion creation failed.\n");
-			return 0;
+			/* Create AEAD and Cipher sessions */
+			retval = pal_create_aead_session(PAL_CRYPTO_AEAD_AES_GCM,
+					pal_ctx, EVP_AEAD_TLS1_AAD_LEN, reconf);
+			if (retval < 0) {
+				engine_log(ENG_LOG_ERR, "AEAD Session creation failed.\n");
+				return 0;
+			}
+
+			retval = pal_create_cipher_session(PAL_CRYPTO_CIPHER_AES_CTR,
+                                               pal_ctx, reconf);
+			if (retval < 0) {
+				engine_log(ENG_LOG_ERR, "Cipher Session creation failed.\n");
+				return 0;
+			}
 		}
+	}
 
-		retval = pal_create_cipher_session(PAL_CRYPTO_CIPHER_AES_CTR,
-						pal_ctx);
-		if (retval < 0) {
-			engine_log(ENG_LOG_ERR, "Cipher Sesion creation failed.\n");
-			return 0;
-		}
-		if (iv == NULL && gcm_ctx->iv_set)
-			iv = (const unsigned char*)&pal_ctx->iv;
-		if (iv) {
+	if (iv != NULL) {
+		if (gcm_ctx->key_set) {
 			CRYPTO_gcm128_setiv(&gcm_ctx->gcm, iv, pal_ctx->ivlen);
 			memcpy(pal_ctx->iv, iv, pal_ctx->ivlen);
 			gcm_ctx->iv_set = 1;
+			gcm_ctx->iv_gen = 0;
 		}
-	} else {
-		if (gcm_ctx->key_set)
-			CRYPTO_gcm128_setiv(&gcm_ctx->gcm, iv, pal_ctx->ivlen);
-		memcpy(pal_ctx->iv, iv, pal_ctx->ivlen);
-		gcm_ctx->iv_set = 1;
-		gcm_ctx->iv_gen = 0;
 	}
-
 	pal_ctx->numpipes = 0;
 	return 1;
 }

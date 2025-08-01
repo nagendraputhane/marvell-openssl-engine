@@ -20,7 +20,7 @@ int pal_create_aead_session(pal_crypto_aead_algorithm_t algo,
  * Create CIPHER Session for Crypto operation only
  */
 int pal_create_cipher_session( pal_crypto_cipher_algorithm_t algo,
-								pal_gcm_ctx_t *pal_ctx)
+								pal_gcm_ctx_t *pal_ctx, uint8_t reconfigure)
 {
 	return 0;
 }
