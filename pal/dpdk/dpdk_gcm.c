@@ -587,10 +587,8 @@ int pal_crypto_gcm_non_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 	memcpy(out, dbuf, len);
 	rv = len;
 	if (pal_ctx->enc) {
+		memcpy(out + len, pal_ctx->op->sym[0].aead.digest.data, pal_ctx->tls_tag_len);
 		memcpy(buf, pal_ctx->op->sym[0].aead.digest.data,
-		       pal_ctx->tls_tag_len);
-		memcpy(pal_ctx->auth_tag,
-		       pal_ctx->op->sym[0].aead.digest.data,
 		       pal_ctx->tls_tag_len);
 	}
 err:
@@ -716,10 +714,9 @@ int pal_crypto_gcm_tls_1_3_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
     memcpy(out, dbuf, len);
     rv = len;
     if (pal_ctx->enc) {
-        memcpy(buf, pal_ctx->op->sym[0].aead.digest.data,
-               pal_ctx->tls_tag_len);
-        memcpy(pal_ctx->auth_tag,
-               pal_ctx->op->sym[0].aead.digest.data,
+	memcpy(out + len, pal_ctx->op->sym[0].aead.digest.data, pal_ctx->tls_tag_len);
+	/* copy digest in external buf */
+	memcpy(buf, pal_ctx->op->sym[0].aead.digest.data,
                pal_ctx->tls_tag_len);
     }
 err:
