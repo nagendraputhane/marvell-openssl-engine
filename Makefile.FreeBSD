@@ -1,0 +1,125 @@
+#*******************************************************************************
+# SPDX-License-Identifier: Marvell-MIT
+# Copyright (c) 2025 Marvell.
+#
+#******************************************************************************/
+
+# Provide DPDK and OPENSSL INSTALL paths
+ifeq ($(DPDK_INSTALL),)
+$(error "Please define DPDK_INSTALL path")
+endif
+ifeq ($(OPENSSL_INSTALL),)
+$(error "Please define OPENSSL_INSTALL path")
+endif
+
+PAL ?= lc
+
+ifeq ($(PAL),lc)
+ifeq ($(DAO_LC_INSTALL),)
+$(error "Please define DAO_LC_INSTALL path")
+endif
+endif
+
+# Search for libdpdk.pc in multiple locations
+DPDK_PC?=$(DPDK_INSTALL)/libdata/pkgconfig:$(DPDK_INSTALL)/usr/local/lib/pkgconfig:/usr/local/lib/pkgconfig:/usr/lib/pkgconfig:/usr/lib64/pkgconfig
+PKG_CONFIG_CMD=PKG_CONFIG_PATH=$(DPDK_PC) pkg-config
+PC_FILE := $(shell find $(DPDK_INSTALL) /usr/local/lib /usr/lib /usr/lib64 -name libdpdk.pc 2>/dev/null | head -n 1)
+
+# Check if libdpdk.pc exists
+ifeq ($(PC_FILE),)
+$(error "libdpdk.pc not found in $(DPDK_INSTALL), /usr/local/lib, /usr/lib, or /usr/lib64. Please ensure DPDK is correctly installed.")
+endif
+
+# Export variables to ensure consistency
+export PKG_CONFIG_PATH := $(DPDK_PC)
+export PKG_CONFIG_CMD
+
+# Validate pkg-config without logging to any file
+DPDK_CFLAGS := $(shell $(PKG_CONFIG_CMD) --cflags libdpdk)
+DPDK_LIBDIR := $(shell $(PKG_CONFIG_CMD) --variable=libdir libdpdk)
+DPDK_LIBS := $(shell $(PKG_CONFIG_CMD) --libs libdpdk)
+DPDK_STATIC_LIBS := $(shell $(PKG_CONFIG_CMD) --static --libs)
+
+# Only include -L flag if DPDK_LIBDIR is non-empty
+LDFLAGS_SHARED = $(if $(DPDK_LIBDIR),-L$(DPDK_LIBDIR)) $(DPDK_LIBS)
+LDFLAGS_STATIC = $(DPDK_STATIC_LIBS)
+LDFLAGS = -L$(OPENSSL_INSTALL)/ -lcrypto
+ifeq ($(PAL),lc)
+LDFLAGS += -L$(DAO_LC_INSTALL)/lib/ -ldao_liquid_crypto
+endif
+
+CFLAGS = $(DPDK_CFLAGS)
+CFLAGS += -I$(DPDK_INSTALL)/include
+CFLAGS += -I$(DAO_LC_INSTALL)/../lib/liquid_crypto
+CFLAGS += -DOSSL_CONF_INIT
+CFLAGS += -g -O2 -I./openssl_provider -I./pal/common
+ifeq ($(PAL),lc)
+CFLAGS += -I./pal/liquid_crypto
+else
+CFLAGS += -I./pal/dpdk
+endif
+CFLAGS += $(WERROR_FLAGS)
+CFLAGS += -I$(OPENSSL_INSTALL)/include -I$(OPENSSL_INSTALL)/crypto/modes/ -I$(OPENSSL_INSTALL)/crypto/ -I$(OPENSSL_INSTALL)/crypto/evp/
+CFLAGS += -I$(OPENSSL_INSTALL)/providers/common/include -I$(OPENSSL_INSTALL)/providers/implementations/include
+
+OTX2 ?= y
+ifeq ($(OTX2),y)
+CFLAGS += -DCRYPTO_OCTEONTX2
+else ifeq ($(A80X0),y)
+CFLAGS += -DCRYPTO_A80X0
+else
+CFLAGS += -DOSSL_PMD
+endif
+
+CFLAGS += -D_FORTIFY_SOURCE=1
+LIBABIVER=1
+
+# Library names
+LIB_OPENSSL_PROVIDER = dpdk_provider.a
+LIB_PAL = pal_dpdk_crypto.a
+
+# All source files are stored in SRCS
+SRCS_OPENSSL_PROVIDER = $(wildcard openssl_provider/*.c)
+SRCS_OPENSSL_ENGINE = $(wildcard openssl_engine/*.c)
+SRCS_PAL_LC = $(wildcard pal/liquid_crypto/*.c)
+SRCS_PAL_DPDK = $(wildcard pal/dpdk/*.c)
+
+CROSS ?=
+CC=$(CROSS)clang
+OBJS_PAL_LC = $(patsubst %.c,%.o,$(SRCS_PAL_LC))
+OBJS_PAL_DPDK = $(patsubst %.c,%.o,$(SRCS_PAL_DPDK))
+OBJS_OPENSSL_PROVIDER = $(patsubst %.c,%.o,$(SRCS_OPENSSL_PROVIDER))
+OBJS_OPENSSL_ENGINE = $(patsubst %.c,%.o,$(SRCS_OPENSSL_ENGINE))
+
+OBJS_OPENSSL_PROVIDER += $(OPENSSL_INSTALL)/providers/libcommon.a
+
+%.o: %.c
+	@echo "Compiling $<"
+	$(CC) $(CFLAGS) -fPIC -c $< -o $@
+
+all: build_targets
+
+build_targets: $(if $(filter lc,$(PAL)),lc_provider.so,$(if $(filter dpdk,$(PAL)),dpdk_provider.so ,lc_provider.so))
+	@echo "Build completed for PAL=$(PAL)"
+
+lc_provider.so: $(OBJS_OPENSSL_PROVIDER) $(OBJS_PAL_LC)
+	$(CC) $(CFLAGS) -shared $(OBJS_OPENSSL_PROVIDER) $(OBJS_PAL_LC) -o $@ $(LDFLAGS) $(LDFLAGS_SHARED)
+
+dpdk_provider.so: $(OBJS_OPENSSL_PROVIDER) $(OBJS_PAL_DPDK)
+	$(CC) $(CFLAGS) -shared $(OBJS_OPENSSL_PROVIDER) $(OBJS_PAL_DPDK) -o $@ $(LDFLAGS) $(LDFLAGS_SHARED)
+
+install:
+ifeq ($(PAL),lc)
+	@echo "Installing lc_provider.so"
+	mkdir -p /usr/local/lib/ossl-modules/
+	install -m 755 lc_provider.so /usr/local/lib/ossl-modules/
+else ifeq ($(PAL),dpdk)
+	@echo "Installing dpdk_provider.so"
+	mkdir -p /usr/local/lib/ossl-modules/
+	install -m 755 dpdk_provider.so /usr/local/lib/ossl-modules/
+else
+	@echo "PAL not specified or unknown; nothing installed"
+endif
+
+clean:
+	rm -f *.a pal/dpdk/*.o pal/liquid_crypto/*.o openssl_provider/*.o openssl_engine/*.o lc_provider.so dpdk_provider.so

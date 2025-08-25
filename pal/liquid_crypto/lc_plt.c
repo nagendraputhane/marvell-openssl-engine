@@ -45,13 +45,24 @@ int pal_plt_init(void)
 	cpurem = (unsigned short)(sched_getcpu()) % MAX_LC_DEVS;
 
 	snprintf(devstr, sizeof(devstr), "%04x:%02x:%02x.%1x", dev_domain, dev_bus, dev_slot, cpurem);
+
+#ifdef __FreeBSD__
 	char *argv[] = {
-				"DPDK", "--file-prefix",
-				idstr,  "--socket-mem=500", /* 500MB per process */
-				"-a", devstr,
-				"-l",   cpu,
-				"-d",   "librte_mempool_ring.so",
+		"DPDK",
+		"-m 500", /* 500MB per process */
+		"-a", devstr,
+		"-l", cpu,
+		"-d", "librte_mempool_ring.so",
 	};
+#else
+	char *argv[] = {
+		"DPDK", "--file-prefix",
+		idstr, "--socket-mem=500", /* 500MB per process */
+		"-a", devstr,
+		"-l", cpu,
+		"-d", "librte_mempool_ring.so",
+	};
+#endif
 
 	argc = sizeof(argv)/sizeof(char *);
 

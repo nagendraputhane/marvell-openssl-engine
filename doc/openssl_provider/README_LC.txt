@@ -82,13 +82,21 @@ Following subsections cover instructions for building dependent packages.
 	 export DPDK_INSTALL=/path/to/dpdk/install/dir
 	 export DAO_LC_INSTALL=/path/to/dao/install/dir
 	 cd openssl-engine-dpdk
+         # For Linux:
 	 make BUILD_TYPE=native PAL=lc BUILD_PROVIDER=y
+         # For FreeBSD:
+         # Only native builds and provider are supported.
+         # By default, this builds the LC provider, To build the DPDK provider, set PAL=dpdk.
+         gmake -f Makefile.FreeBSD
 
 **d). Installing LC provider**
 
 .. code-block:: shell
 
+         # For Linux:
 	 sudo make install PAL=lc
+         # For FreeBSD:
+         sudo gmake -f Makefile.FreeBSD install PAL=lc
 
 **e). Install OCTEON PCIe End Point driver**
 
@@ -267,3 +275,4 @@ d). Benchmark AES-128-CBC async mode
 
 - AES operations are limited to a payload size of 5120 bytes. Operations exceeding this size will fail with an error.
 - Multi option with Speed is currently not supported.
+- Multi-process mode is not supported in the FreeBSD environment.
