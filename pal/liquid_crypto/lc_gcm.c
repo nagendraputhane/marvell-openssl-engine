@@ -186,20 +186,15 @@ int pal_aes_gcm_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *buf,
 		status_ptr[i]->numpipes = numpipes;
 		status_ptr[i]->wctx_p = wctx;
 
-		if (prepare_lc_buf(&in_buf[i], pal_ctx->input_buf[i], pal_ctx->input_len[i]) < 0) {
+		if (prepare_lc_buf(&in_buf[i], pal_ctx->input_buf[i], pal_ctx->input_len[i] + pal_ctx->tls_tag_len) < 0) {
 			ret = -1;
 			goto free_resources;
 		}
 
-		if (prepare_lc_buf(&out_buf[i], pal_ctx->output_buf[i], pal_ctx->input_len[i]) < 0) {
+		if (prepare_lc_buf(&out_buf[i], pal_ctx->output_buf[i], pal_ctx->input_len[i] + pal_ctx->tls_tag_len) < 0) {
 			ret = -1;
 			goto free_resources;
 		}
-
-		in_buf[i]->frag_len += pal_ctx->tls_tag_len + pal_ctx->tls_aad_len;
-		in_buf[i]->total_len += pal_ctx->tls_tag_len + pal_ctx->tls_aad_len;
-		out_buf[i]->frag_len += pal_ctx->tls_tag_len + pal_ctx->tls_aad_len;
-		out_buf[i]->total_len += pal_ctx->tls_tag_len + pal_ctx->tls_aad_len;
 
 		enq_op_ptr[i].op_cookie = (uint64_t)status_ptr[i];
 		enq_op_ptr[i].sess_id = pal_ctx->aead_event.sess_event.sess_id;
@@ -214,10 +209,8 @@ int pal_aes_gcm_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *buf,
 		enq_op_ptr[i].auth_len = 0;
 		enq_op_ptr[i].auth_offset = 0;
 		enq_op_ptr[i].auth_iv = NULL;
-
-		enq_op_ptr[i].digest =
-			pal_ctx->enc ? (pal_ctx->output_buf[i] + pal_ctx->input_len[i] + pal_ctx->tls_aad_len)
-			: (pal_ctx->input_buf[i] + pal_ctx->input_len[i]);
+		/* If digest is NULL, the auth tag is placed/read right after ciphered data in the buffer. */
+		enq_op_ptr[i].digest = NULL;
 	}
 
 /* Enqueue this crypto operation in the crypto device */
@@ -285,8 +278,6 @@ int pal_aes_gcm_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *buf,
 
 	for (i = 0; i < numpipes; i++)
 	{
-		memmove(pal_ctx->output_buf[i], pal_ctx->output_buf[i]
-					+ pal_ctx->tls_aad_len, pal_ctx->input_len[i] + pal_ctx->tls_tag_len);
 		if (pal_ctx->enc) {
 			// Return total length: IV + ciphertext + tag
 			ret = pal_ctx->input_len[i] + pal_ctx->tls_exp_iv_len + pal_ctx->tls_tag_len;
@@ -459,20 +450,15 @@ int pal_crypto_gcm_non_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 	status->is_successful = 0;
 	status->is_complete = 0;
 
-	if (prepare_lc_buf(&in_buf, (uint8_t *)in, len) < 0) {
+	if (prepare_lc_buf(&in_buf, (uint8_t *)in, len + pal_ctx->tls_tag_len) < 0) {
 		engine_log(ENG_LOG_ERR, "Failed to prepare input buffer\n");
 		goto cleanup;
 	}
 
-	if (prepare_lc_buf(&out_buf, (uint8_t *)out, len) < 0) {
+	if (prepare_lc_buf(&out_buf, (uint8_t *)out, len + pal_ctx->tls_tag_len) < 0) {
 		engine_log(ENG_LOG_ERR, "Failed to prepare input buffer\n");
 		goto cleanup;
 	}
-
-	in_buf->frag_len += pal_ctx->tls_tag_len + pal_ctx->aad_len;
-	in_buf->total_len += pal_ctx->tls_tag_len + pal_ctx->aad_len;
-	out_buf->frag_len += pal_ctx->tls_tag_len + pal_ctx->aad_len;
-	out_buf->total_len += pal_ctx->tls_tag_len + pal_ctx->aad_len;
 
 	enq_op_ptr[0].op_cookie = (uint64_t)status;
 	enq_op_ptr[0].sess_id = pal_ctx->aead_event.sess_event.sess_id;
@@ -487,10 +473,8 @@ int pal_crypto_gcm_non_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 	enq_op_ptr[0].auth_len = 0;
 	enq_op_ptr[0].auth_offset = 0;
 	enq_op_ptr[0].auth_iv = NULL;
-
-	enq_op_ptr[0].digest =
-		pal_ctx->enc ? ((uint8_t *)out + len + pal_ctx->aad_len)
-		: (uint8_t *) in + len;
+	/* If digest is NULL, the auth tag is placed/read right after ciphered data in the buffer. */
+	enq_op_ptr[0].digest = NULL;
 
 	// Enqueue the operation
 	if (dao_liquid_crypto_sym_enqueue_burst(dev_id, sym_queue, &enq_op_ptr[0], 1) != 1) {
@@ -528,9 +512,9 @@ int pal_crypto_gcm_non_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 
 	if (pal_ctx->enc)
 	{
-		memmove(out, out + pal_ctx->aad_len, len + pal_ctx->tls_tag_len);
-		/* copy authentication tag (digest) in external buf */
-		memcpy(buf, enq_op_ptr[0].digest, pal_ctx->tls_tag_len);
+		/* copy authentication tag (digest) in external buf
+		   used by get_params and ctrl_cmd */
+		memcpy(buf, (uint8_t *)out + len, pal_ctx->tls_tag_len);
 	}
 
 	ret = len;
@@ -583,20 +567,15 @@ int pal_crypto_gcm_tls_1_3_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 	status->is_successful = 0;
 	status->is_complete = 0;
 
-	if (prepare_lc_buf(&in_buf, (uint8_t *)in, len) < 0) {
+	if (prepare_lc_buf(&in_buf, (uint8_t *)in, len + pal_ctx->tls_tag_len) < 0) {
 		engine_log(ENG_LOG_ERR, "Failed to prepare input buffer\n");
 		goto cleanup;
 	}
 
-	if (prepare_lc_buf(&out_buf, (uint8_t *)out, len) < 0) {
+	if (prepare_lc_buf(&out_buf, (uint8_t *)out, len + pal_ctx->tls_tag_len) < 0) {
 		engine_log(ENG_LOG_ERR, "Failed to prepare input buffer\n");
 		goto cleanup;
 	}
-
-	in_buf->frag_len += pal_ctx->tls_tag_len + pal_ctx->aad_len;
-	in_buf->total_len += pal_ctx->tls_tag_len + pal_ctx->aad_len;
-	out_buf->frag_len += pal_ctx->tls_tag_len + pal_ctx->aad_len;
-	out_buf->total_len += pal_ctx->tls_tag_len + pal_ctx->aad_len;
 
 	enq_op_ptr[0].op_cookie = (uint64_t)status;
 	enq_op_ptr[0].sess_id = pal_ctx->aead_event.sess_event.sess_id;
@@ -611,10 +590,8 @@ int pal_crypto_gcm_tls_1_3_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 	enq_op_ptr[0].auth_len = 0;
 	enq_op_ptr[0].auth_offset = 0;
 	enq_op_ptr[0].auth_iv = NULL;
-
-	enq_op_ptr[0].digest =
-		pal_ctx->enc ? ((uint8_t *)out + len + pal_ctx->aad_len)
-		: (uint8_t *) in + len;
+	/* If digest is NULL, the auth tag is placed/read right after ciphered data in the buffer. */
+	enq_op_ptr[0].digest = NULL;
 
 	// Enqueue the operation
 	if (dao_liquid_crypto_sym_enqueue_burst(dev_id, sym_queue, &enq_op_ptr[0], 1) != 1) {
@@ -652,9 +629,9 @@ int pal_crypto_gcm_tls_1_3_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 
 	if (pal_ctx->enc)
 	{
-		memmove(out, out + pal_ctx->aad_len, len + pal_ctx->tls_tag_len);
-		/* copy authentication tag (digest) in external buf */
-		memcpy(buf, enq_op_ptr[0].digest, pal_ctx->tls_tag_len);
+		/* copy authentication tag (digest) in external buf
+		   used by get_params and ctrl_cmd */
+		memcpy(buf, (uint8_t *) out + len, pal_ctx->tls_tag_len);
 	}
 
 	ret = len;
