@@ -46,12 +46,12 @@ int sym_create_session(uint16_t dev_id,
 
 	ret = dao_liquid_crypto_sym_sess_create(dev_id, &cry_session, sess_cookie);
 	if (ret < 0) {
-		printf("Could not create session");
+		fprintf(stderr, "Could not create session");
 		return 0;
 	}
 	ret = sess_event_dequeue(dev_id, event);
 	if (ret < 0) {
-		printf("Could not dequeue session event");
+		fprintf(stderr, "Could not dequeue session event");
 		return 0;
 	}
 
@@ -83,12 +83,12 @@ int sym_session_cleanup(struct dao_lc_cmd_event *event, int dev_id)
 		ret = dao_liquid_crypto_sym_sess_destroy(dev_id, event->sess_event.sess_id,
 				event->sess_event.sess_cookie);
 		if (ret < 0) {
-			printf("Could not destroy session");
+			fprintf(stderr, "Could not destroy session");
 			return 0;
 		}
 		ret = sess_event_dequeue(dev_id, event);
 		if (ret < 0) {
-			printf("Could not dequeue session event");
+			fprintf(stderr, "Could not dequeue session event");
 			return 0;
 		}
 

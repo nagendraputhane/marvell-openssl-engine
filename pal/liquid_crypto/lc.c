@@ -79,7 +79,7 @@ int pal_crypto_init(int argc, char *argv[], bool eal_init, char *driver_name)
 	glb_params.qp_id = 1;
 
 	for (dev_id = 0; dev_id < info->nb_dev; dev_id++) {
-		fprintf(stdout,"Number of queue pairs for device %u: %u", dev_id, info->nb_qp[i]);
+		fprintf(stderr,"Number of queue pairs for device %u: %u \n", dev_id, info->nb_qp[i]);
 
 		if (info->nb_qp[dev_id] == 0)
 			continue;
@@ -116,6 +116,10 @@ int pal_crypto_init(int argc, char *argv[], bool eal_init, char *driver_name)
 			goto dev_destroy;
 		}
 	}
+
+	RTE_LOG(INFO, USER1, "==========================\n");
+	RTE_LOG(INFO, USER1, "Lcore ID: %d\n", rte_lcore_id());
+	RTE_LOG(INFO, USER1, "==========================\n");
 
 	return 0;
 dev_destroy:
