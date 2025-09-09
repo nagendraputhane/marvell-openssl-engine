@@ -77,6 +77,46 @@ typedef struct pal_rsa_ctx {
 	uint8_t *wctx_p;
 } pal_rsa_ctx_t;
 
+typedef enum pal_crypto_curve_id{
+  PAL_CRYPTO_EC_GROUP_SECP192R1 = RTE_CRYPTO_EC_GROUP_SECP192R1,
+  PAL_CRYPTO_EC_GROUP_SECP224R1 = RTE_CRYPTO_EC_GROUP_SECP224R1,
+  PAL_CRYPTO_EC_GROUP_SECP256R1 = RTE_CRYPTO_EC_GROUP_SECP256R1,
+  PAL_CRYPTO_EC_GROUP_SECP384R1 = RTE_CRYPTO_EC_GROUP_SECP384R1,
+  PAL_CRYPTO_EC_GROUP_SECP521R1 = RTE_CRYPTO_EC_GROUP_SECP521R1,
+}pal_crypto_curve_id_t;
+
+typedef enum pal_crypto_asym_xform_type {
+  PAL_CRYPTO_ASYM_XFORM_ECDSA = RTE_CRYPTO_ASYM_XFORM_ECDSA,
+  PAL_CRYPTO_ASYM_XFORM_ECPM = RTE_CRYPTO_ASYM_XFORM_ECPM
+} pal_crypto_asym_xform_type_t;
+
+typedef struct pal_ecdsa_ctx {
+  int devid;
+  int queue;
+  uint8_t *x_data;
+  int x_data_len;
+  uint8_t *y_data;
+  int y_data_len;
+  uint8_t *scalar_data;
+  int scalar_data_len;
+  void *rxbuf;
+  void *rybuf;
+  uint8_t *rdata;
+  int rlen;
+  uint8_t *sdata;
+  int slen;
+  char *dgst;
+  int dlen;
+  uint8_t *pkey;
+  int pkey_len;
+  uint8_t *secret;
+  int secret_len;
+  pal_crypto_asym_xform_type_t xform_type;
+  pal_crypto_curve_id_t curve_id;
+  async_job async_cb;
+  uint8_t *wctx_p;
+} pal_ecdsa_ctx_t;
+
 typedef struct pal_cbc_ctx {
 	struct rte_cryptodev_sym_session *cry_session;
 	/* Below members are for pipeline */
@@ -172,5 +212,12 @@ static inline void pal_sym_session_cbc_init(pal_cbc_ctx_t *pal_ctx)
 {
 	pal_ctx->cry_session = NULL;
 }
-
+static inline void pal_ecdsa_sigver_init(pal_ecdsa_ctx_t *pal_ctx)
+{
+	pal_ctx->xform_type = RTE_CRYPTO_ASYM_XFORM_ECDSA;
+}
+static inline void pal_ecdh_init(pal_ecdsa_ctx_t *pal_ctx)
+{
+	pal_ctx->xform_type = RTE_CRYPTO_ASYM_XFORM_ECPM;
+}
 #endif

@@ -377,7 +377,7 @@ int ecdh_keygen(EC_KEY *eckey)
   pal_ctx.rxbuf = rxbuf;
   pal_ctx.rybuf = rybuf;
   pal_ctx.curve_id = curve_id;
-  pal_ctx.xform_type = PAL_CRYPTO_ASYM_XFORM_ECPM;
+  pal_ecdh_init(&pal_ctx);
   pal_ctx.rxbuf = rxbuf;
   pal_ctx.rybuf = rybuf;
   pal_ctx.async_cb = provider_ossl_handle_async_job;

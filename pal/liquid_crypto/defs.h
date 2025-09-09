@@ -91,6 +91,40 @@ typedef struct pal_cpoly_ctx {
     int dev_id;
     async_job async_cb;
 }pal_cpoly_ctx_t;
+typedef enum pal_crypto_curve_id{
+	PAL_CRYPTO_EC_GROUP_SECP192R1 = DAO_LC_AE_EC_ID_P192,
+	PAL_CRYPTO_EC_GROUP_SECP224R1 = DAO_LC_AE_EC_ID_P224,
+	PAL_CRYPTO_EC_GROUP_SECP256R1 = DAO_LC_AE_EC_ID_P256,
+	PAL_CRYPTO_EC_GROUP_SECP384R1 = DAO_LC_AE_EC_ID_P384,
+	PAL_CRYPTO_EC_GROUP_SECP521R1 = DAO_LC_AE_EC_ID_P521,
+}pal_crypto_curve_id_t;
+typedef struct pal_ecdsa_ctx {
+	int devid;
+	int queue;
+	uint8_t *x_data;
+	int x_data_len;
+	uint8_t *y_data;
+	int y_data_len;
+	uint8_t *scalar_data;
+	int scalar_data_len;
+	void *rxbuf;
+	void *rybuf;
+	uint8_t *rdata;
+	int rlen;
+	uint8_t *sdata;
+	int slen;
+	char *dgst;
+	int dlen;
+	uint8_t *pkey;
+	int pkey_len;
+	uint8_t *secret;
+	int secret_len;
+	pal_crypto_curve_id_t curve_id;
+	async_job async_cb;
+	uint8_t *wctx_p;
+	uint8_t is_completed;
+	int8_t is_success;
+} pal_ecdsa_ctx_t;
 
 #define PAL_ASSERT(cond, error_msg) \
 	do { \
@@ -166,5 +200,13 @@ static inline void pal_sym_session_cbc_init(pal_cbc_ctx_t *pal_ctx)
 {
 	memset(&pal_ctx->cry_session, 0, sizeof(pal_ctx->cry_session));
 	memset(&pal_ctx->event, 0, sizeof(pal_ctx->event));
+}
+static inline void pal_ecdsa_sigver_init(pal_ecdsa_ctx_t *pal_ctx)
+{
+	return;
+}
+static inline void pal_ecdh_init(pal_ecdsa_ctx_t *pal_ctx)
+{
+	return;
 }
 #endif

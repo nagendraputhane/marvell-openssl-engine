@@ -185,7 +185,7 @@ static inline int ecdsa_sign(int type, const unsigned char *dgst, int dlen,
     pal_ctx.dgst = dgst;
     pal_ctx.dlen = dlen;
     pal_ctx.curve_id = curve_id;
-    pal_ctx.xform_type = PAL_CRYPTO_ASYM_XFORM_ECDSA;
+    pal_ecdsa_sigver_init(&pal_ctx);
     pal_ctx.rdata = rdata;
     pal_ctx.sdata = sdata;
     pal_ctx.rlen = max_rslen;
@@ -302,7 +302,7 @@ static inline int ecdsa_verify(int type, const unsigned char *dgst, int dgst_len
     pal_ctx.dgst = dgst;
     pal_ctx.dlen = dgst_len;
     pal_ctx.curve_id = curve_id;
-    pal_ctx.xform_type = PAL_CRYPTO_ASYM_XFORM_ECDSA;
+    pal_ecdsa_sigver_init(&pal_ctx);
     pal_ctx.async_cb = provider_ossl_handle_async_job;
 
     BN_bn2bin(rbn, pal_ctx.rdata);
