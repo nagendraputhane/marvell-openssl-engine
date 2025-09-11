@@ -5,6 +5,7 @@
 #ifndef __PAL_LC_DEFS_H__
 #define __PAL_LC_DEFS_H__
 #include <dao_liquid_crypto.h>
+#include "liquid_crypto_priv.h"
 #include "pal_rsa.h"
 
 #define TEST_LC_TIMEOUT 10
@@ -62,6 +63,34 @@ typedef struct pal_rsa_ctx {
 	uint8_t is_success;
 } pal_rsa_ctx_t;
 
+typedef struct pal_cpoly_ctx {
+    struct dao_lc_sym_ctx cry_session;
+	struct dao_lc_cmd_event event;
+	uint8_t **input_buf;
+    uint8_t **output_buf;
+    size_t *input_len;
+	uint8_t seq_num[SSL_MAX_PIPELINES][8];
+    char aad_pipe[SSL_MAX_PIPELINES][TLS_AAD_LEN];
+    uint8_t key[32];
+    uint8_t aad[16];
+    uint8_t auth_tag[16];
+    unsigned char buf[16]; /* Buffer of partial blocks processed via update calls */
+    uint8_t iv[12];
+    uint32_t aad_cnt;
+    int key_len;
+    int tls_tag_len;
+    int enc;
+    int iv_len;
+    int auth_taglen;
+    int aad_len;
+    int tls_aad_len;
+    int tls_aad_pad_sz;
+    int numpipes;
+    int hw_offload_pkt_sz_threshold;
+    int queue;
+    int dev_id;
+    async_job async_cb;
+}pal_cpoly_ctx_t;
 
 #define PAL_ASSERT(cond, error_msg) \
 	do { \
@@ -121,6 +150,7 @@ typedef struct pal_gcm_ctx {
 	async_job async_cb;
 } pal_gcm_ctx_t;
 
+int prepare_lc_buf(struct dao_lc_buf **head, uint8_t *data, long int len);
 int sym_create_session(uint16_t dev_id,
 		struct dao_lc_sym_ctx cry_session,struct dao_lc_cmd_event *event, uint8_t reconfigure, uint64_t sess_cookie);
 int sym_session_cleanup(struct dao_lc_cmd_event *event, int dev_id);

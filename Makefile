@@ -49,9 +49,7 @@ LDFLAGS = -L$(OPENSSL_INSTALL)/ -lcrypto
 ifeq ($(PAL),lc)
 LDFLAGS += -L$(DAO_LC_INSTALL)/lib/  -ldao_liquid_crypto
 endif
-
-
-CFLAGS += -g -O2  -I./openssl_provider -I./pal/common
+CFLAGS += -g -I./openssl_provider -I./pal/common
 ifeq ($(PAL),lc)
 CFLAGS +=  -I./pal/liquid_crypto
 else
@@ -69,7 +67,12 @@ else
 CFLAGS += -DOSSL_PMD
 endif
 
-CFLAGS += -D_FORTIFY_SOURCE=1
+DEBUG ?= 0
+ifeq ($(DEBUG),1)
+CFLAGS += -O0 -DDEBUG
+else
+CFLAGS += -O2 -D_FORTIFY_SOURCE=1
+endif
 LIBABIVER=1
 
 # Library names
@@ -83,7 +86,7 @@ SRCS_PAL_LC = $(wildcard pal/liquid_crypto/*.c)
 SRCS_PAL_DPDK = $(wildcard pal/dpdk/*.c)
 
 CROSS ?=
-CC=$(CROSS)gcc
+CC=$(CROSS)gcc -fPIC
 OBJS_PAL_LC = $(patsubst %.c,%.o,$(SRCS_PAL_LC))
 OBJS_PAL_DPDK = $(patsubst %.c,%.o,$(SRCS_PAL_DPDK))
 OBJS_OPENSSL_PROVIDER = $(patsubst %.c,%.o,$(SRCS_OPENSSL_PROVIDER))
@@ -95,7 +98,7 @@ OBJS_OPENSSL_PROVIDER += $(OPENSSL_INSTALL)/providers/libcommon.a
 
 
 %.o: %.c $(wildcard *.h) $(wildcard pal/common/*.h) $(wildcard pal/liquid_crypto/*.h) $(wildcard pal/dpdk/*.h)
-	$(CC) $(CFLAGS) $(DEBUG) -fPIC -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 all: build_targets
 

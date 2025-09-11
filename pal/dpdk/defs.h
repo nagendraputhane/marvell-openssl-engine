@@ -48,6 +48,9 @@ typedef enum pal_rsa_key_type {
 #endif
 } pal_rsa_key_type_t;
 
+#define CRYPTO_OP(c)	\
+	((c) ? RTE_CRYPTO_AEAD_OP_ENCRYPT : RTE_CRYPTO_AEAD_OP_DECRYPT)
+
 typedef struct pal_rsa_ctx {
 	int dev_id;
 	int qp_id;
@@ -122,6 +125,40 @@ typedef struct pal_gcm_ctx {
 	iv_func_ptr iv_cb;
 	async_job async_cb;
 } pal_gcm_ctx_t;
+
+typedef struct pal_cpoly_ctx {
+    struct rte_crypto_sym_xform aead_xform;
+    struct rte_cryptodev_sym_session *cry_session;
+    struct rte_crypto_op *op;
+    struct rte_mbuf *ibuf;
+    struct rte_mbuf *obuf;
+    uint8_t **input_buf;
+    uint8_t **output_buf;
+    size_t *input_len;
+    struct rte_crypto_op *ops[SSL_MAX_PIPELINES];
+    struct rte_mbuf *ibufs[SSL_MAX_PIPELINES];
+    uint8_t seq_num[SSL_MAX_PIPELINES][8];
+    char aad_pipe[SSL_MAX_PIPELINES][TLS_AAD_LEN];
+    uint8_t key[32];
+    uint8_t aad[16];
+    uint8_t auth_tag[16];
+    unsigned char buf[16]; /* Buffer of partial blocks processed via update calls */
+    uint8_t iv[12];
+    uint32_t aad_cnt;
+    int key_len;
+    int tls_tag_len;
+    int enc;
+    int iv_len;
+    int auth_taglen;
+    int aad_len;
+    int tls_aad_len;
+    int tls_aad_pad_sz;
+    int numpipes;
+    int hw_offload_pkt_sz_threshold;
+    int queue;
+    int dev_id;
+    async_job async_cb;
+}pal_cpoly_ctx_t;
 
 int asym_create_session(uint16_t dev_id, struct rte_crypto_asym_xform *xform,
 	struct rte_cryptodev_asym_session **sess);

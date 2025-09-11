@@ -98,41 +98,6 @@ int pal_create_cipher_session( pal_crypto_cipher_algorithm_t algo,
 	return 0;
 }
 
-static inline int prepare_lc_buf(struct dao_lc_buf **head, uint8_t *data, long int len)
-{
-	long int remaining = len;
-	long int copied = 0;
-	struct dao_lc_buf *seg_buf = NULL, *prev = NULL;
-	*head = NULL;
-
-	while (remaining > 0) {
-		long int seg = remaining > LIQUID_CRYPTO_BUF_SZ_MAX ? LIQUID_CRYPTO_BUF_SZ_MAX : remaining;
-
-		seg_buf = pal_malloc(sizeof(struct dao_lc_buf));
-		if (unlikely(!seg_buf)) {
-			engine_log(ENG_LOG_ERR, "Failed to allocate segment buffer\n");
-			return -1;
-		}
-
-		seg_buf->data = data + copied;
-		seg_buf->frag_len = seg;
-		seg_buf->total_len = len;
-		seg_buf->next = NULL;
-
-		if (!*head) {
-			*head = seg_buf;
-		} else {
-			prev->next = seg_buf;
-	}
-
-		prev = seg_buf;
-		copied += seg;
-		remaining -= seg;
-	}
-
-	return 0;
-}
-
 /* Below API added for TLS1_2 protocol
  *
  * AAD data is alway set via control function in case of TLS1_2

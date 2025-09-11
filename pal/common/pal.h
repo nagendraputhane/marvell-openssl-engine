@@ -52,7 +52,14 @@
 #define CACHE_FLUSH_THRESHOLD_MULTIPLIER 1.5
 #define CACHESZ_LIMIT(n)((n>1)?((n/CACHE_FLUSH_THRESHOLD_MULTIPLIER)-1):0)
 #define PAL_CPT_DIGEST_LEN			64
-#define TLS_AAD_LEN                    13
+#define TLS_AAD_LEN				13
+#define PAL_CPOLY_KEY_LEN			32
+#define PAL_CPOLY_BLOCK_SIZE			1
+#define PAL_CPOLY_AEAD_AAD_LEN			12
+#define PAL_CPOLY_AEAD_DIGEST_LEN		16
+#define TLS_HDR_SIZE				13
+#define NO_TLS_PAYLOAD_LENGTH			((size_t)-1)
+#define POLY1305_ctx(actx)			((POLY1305 *)(actx + 1))
 
 #define PAL_IV_OFFSET			\
 	(sizeof(struct rte_crypto_op) + sizeof(struct rte_crypto_sym_op))

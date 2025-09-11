@@ -16,7 +16,11 @@
 struct global_params glb_params;
 int cpt_num_asym_requests_in_flight = 0;
 int cpt_num_cipher_pipeline_requests_in_flight = 0;
-static uint8_t log_level = 0;
+#ifdef DEBUG
+static uint8_t log_level = ENG_LOG_INFO;
+#else
+static uint8_t log_level = ENG_LOG_ERR;
+#endif
 static FILE* ossl_log_fp = NULL;
 
 static uint8_t engine_level = 0;

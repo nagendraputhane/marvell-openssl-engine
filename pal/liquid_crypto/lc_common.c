@@ -68,7 +68,7 @@ bool pal_is_hw_sym_algos_supported(int algo)
 		case PAL_CRYPTO_CIPHER_AES_CBC_HMAC_SHA1:
 			return false;
 		case PAL_CRYPTO_AEAD_CHACHA20_POLY1305:
-			return false;
+			return true;
 		default:
 			engine_log(ENG_LOG_ERR, "Invalid algo\n");
 	}
@@ -97,6 +97,41 @@ int sym_session_cleanup(struct dao_lc_cmd_event *event, int dev_id)
 	}
 
 	return 1;
+}
+
+int prepare_lc_buf(struct dao_lc_buf **head, uint8_t *data, long int len)
+{
+	long int remaining = len;
+	long int copied = 0;
+	struct dao_lc_buf *seg_buf = NULL, *prev = NULL;
+	*head = NULL;
+
+	while (remaining > 0) {
+		long int seg = remaining > LIQUID_CRYPTO_BUF_SZ_MAX ? LIQUID_CRYPTO_BUF_SZ_MAX : remaining;
+
+		seg_buf = pal_malloc(sizeof(struct dao_lc_buf));
+		if (unlikely(!seg_buf)) {
+			engine_log(ENG_LOG_ERR, "Failed to allocate segment buffer\n");
+			return -1;
+		}
+
+		seg_buf->data = data + copied;
+		seg_buf->frag_len = seg;
+		seg_buf->total_len = len;
+		seg_buf->next = NULL;
+
+		if (!*head) {
+			*head = seg_buf;
+		} else {
+			prev->next = seg_buf;
+	}
+
+		prev = seg_buf;
+		copied += seg;
+		remaining -= seg;
+	}
+
+	return 0;
 }
 
 int pal_sym_poll(uint8_t dev_id, uint16_t qp_id, async_job async_cb)
