@@ -6,6 +6,18 @@
 #define __RSA_KMGMT_H__
 #include <openssl/bn.h> // For BIGNUM(bn)
 
+#define PROV_RSA_PSS_MAX_NAME 50
+
+typedef struct {
+    int hash_algorithm_nid;
+    struct {
+        int algorithm_nid;       /* Currently always NID_mgf1 */
+        int hash_algorithm_nid;
+    } mask_gen;
+    int salt_len;
+    int trailer_field;
+} prov_rsa_pss_params;
+
 /*  Our provider side key object data type */
 typedef struct {
     uint8_t *n_data;
@@ -28,6 +40,7 @@ typedef struct {
     void *provctx;
     int use_crt;
     int refcnt;
+    prov_rsa_pss_params pss;
 } prov_rsa_key_data;
 
 void __prov_rsa_freedata(void *keydata);

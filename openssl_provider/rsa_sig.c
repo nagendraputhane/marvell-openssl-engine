@@ -41,6 +41,7 @@ static OSSL_ITEM padding_item[] = {
     { 0, NULL }
 };
 
+static const unsigned char zeroes[] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
 static OSSL_FUNC_signature_newctx_fn rsa_newctx;
 static OSSL_FUNC_signature_freectx_fn rsa_freectx;
@@ -71,6 +72,15 @@ typedef struct {
     EVP_MD *md;
     EVP_MD_CTX *mdctx;
     char mdname[PROV_MAX_NAME_SIZE];
+
+    EVP_MD *mgf1_md;
+    int mgf1_mdnid;
+    char mgf1_mdname[PROV_MAX_NAME_SIZE];
+    /* PSS salt length */
+    int saltlen;
+    /* Minimum salt length or -1 if no PSS parameter restriction */
+    int min_saltlen;
+    unsigned char *tbuf;
 } PROV_RSA_CTX;
 
 static inline int prov_rsa_check_modlen(prov_rsa_key_data * key)
@@ -78,6 +88,32 @@ static inline int prov_rsa_check_modlen(prov_rsa_key_data * key)
     int16_t modlen = key->n_len;
 
     return pal_rsa_capability_check_modlen(modlen);
+}
+
+#define prov_rsa_pss_restricted(prsactx) ((prsactx)->min_saltlen != -1)
+
+static int setup_tbuf(PROV_RSA_CTX *ctx)
+{
+    if (ctx->tbuf != NULL)
+        return 1;
+    if ((ctx->tbuf = OPENSSL_malloc(ctx->key->n_len)) == NULL) {
+        ERR_raise(ERR_LIB_PROV, ERR_R_MALLOC_FAILURE);
+        return 0;
+    }
+    return 1;
+}
+
+static void clean_tbuf(PROV_RSA_CTX *ctx)
+{
+    if (ctx->tbuf != NULL)
+        OPENSSL_cleanse(ctx->tbuf, ctx->key->n_len);
+}
+
+static void free_tbuf(PROV_RSA_CTX *ctx)
+{
+    clean_tbuf(ctx);
+    OPENSSL_free(ctx->tbuf);
+    ctx->tbuf = NULL;
 }
 
 static void *rsa_newctx(void *provctx, const char *propq)
@@ -98,6 +134,9 @@ static void *rsa_newctx(void *provctx, const char *propq)
         fprintf(stderr, "%s:%d:%s(): OPENSSL_zalloc failure\n",
                 __FILE__, __LINE__, __func__);
     }
+    /* Maximum up to digest length for sign, auto for verify */
+    prsactx->saltlen = RSA_PSS_SALTLEN_AUTO_DIGEST_MAX;
+    prsactx->min_saltlen = -1;
     return prsactx;
 }
 
@@ -117,7 +156,9 @@ static void *rsa_dupctx(void *vprsactx)
     dstctx->key = NULL;
     dstctx->md = NULL;
     dstctx->mdctx = NULL;
+    dstctx->mgf1_md = NULL;
     dstctx->propq = NULL;
+    dstctx->tbuf = NULL;
 
     if (srcctx->key != NULL) {
         (void) PROV_ATOMIC_INC(srcctx->key->refcnt);
@@ -127,6 +168,11 @@ static void *rsa_dupctx(void *vprsactx)
     if (srcctx->md != NULL) {
         EVP_MD_up_ref(srcctx->md);
         dstctx->md = srcctx->md;
+    }
+
+    if (srcctx->mgf1_md) {
+        EVP_MD_up_ref(srcctx->mgf1_md);
+        dstctx->mgf1_md = srcctx->mgf1_md;
     }
 
     if (srcctx->mdctx != NULL) {
@@ -148,6 +194,124 @@ static void *rsa_dupctx(void *vprsactx)
 err:
     rsa_freectx(dstctx);
     return NULL;
+}
+
+int prov_padding_add_PKCS1_PSS_mgf1(prov_rsa_key_data *rsa, unsigned char *EM,
+                                   const unsigned char *mHash,
+                                   const EVP_MD *Hash, const EVP_MD *mgf1Hash,
+                                   int sLen)
+{
+    int i;
+    int ret = 0;
+    int hLen, maskedDBLen, MSBits, emLen;
+    unsigned char *H, *salt = NULL, *p;
+    EVP_MD_CTX *ctx = NULL;
+    int sLenMax = -1;
+
+    if (mgf1Hash == NULL)
+        mgf1Hash = Hash;
+
+    hLen = EVP_MD_get_size(Hash);
+    if (hLen < 0)
+        goto err;
+    /*-
+     * Negative sLen has special meanings:
+     *      -1      sLen == hLen
+     *      -2      salt length is maximized
+     *      -3      same as above (on signing)
+     *      -4      salt length is min(hLen, maximum salt length)
+     *      -N      reserved
+     */
+    /* FIPS 186-4 section 5 "The RSA Digital Signature Algorithm", subsection
+     * 5.5 "PKCS #1" says: "For RSASSA-PSS […] the length (in bytes) of the
+     * salt (sLen) shall satisfy 0 <= sLen <= hLen, where hLen is the length of
+     * the hash function output block (in bytes)."
+     *
+     * Provide a way to use at most the digest length, so that the default does
+     * not violate FIPS 186-4. */
+    if (sLen == RSA_PSS_SALTLEN_DIGEST) {
+        sLen = hLen;
+    } else if (sLen == RSA_PSS_SALTLEN_MAX_SIGN
+            || sLen == RSA_PSS_SALTLEN_AUTO) {
+        sLen = RSA_PSS_SALTLEN_MAX;
+    } else if (sLen == RSA_PSS_SALTLEN_AUTO_DIGEST_MAX) {
+        sLen = RSA_PSS_SALTLEN_MAX;
+        sLenMax = hLen;
+    } else if (sLen < RSA_PSS_SALTLEN_AUTO_DIGEST_MAX) {
+        ERR_raise(ERR_LIB_RSA, RSA_R_SLEN_CHECK_FAILED);
+        goto err;
+    }
+
+    MSBits = (rsa->n_len - 1) & 0x7;
+    emLen = rsa->n_len;
+    if (MSBits == 0) {
+        *EM++ = 0;
+        emLen--;
+    }
+    if (emLen < hLen + 2) {
+        ERR_raise(ERR_LIB_RSA, RSA_R_DATA_TOO_LARGE_FOR_KEY_SIZE);
+        goto err;
+    }
+    if (sLen == RSA_PSS_SALTLEN_MAX) {
+        sLen = emLen - hLen - 2;
+        if (sLenMax >= 0 && sLen > sLenMax)
+            sLen = sLenMax;
+    } else if (sLen > emLen - hLen - 2) {
+        ERR_raise(ERR_LIB_RSA, RSA_R_DATA_TOO_LARGE_FOR_KEY_SIZE);
+        goto err;
+    }
+    if (sLen > 0) {
+        salt = OPENSSL_malloc(sLen);
+        if (salt == NULL)
+            goto err;
+        if (RAND_bytes_ex(NULL, salt, sLen, 0) <= 0)
+            goto err;
+    }
+    maskedDBLen = emLen - hLen - 1;
+    H = EM + maskedDBLen;
+    ctx = EVP_MD_CTX_new();
+    if (ctx == NULL)
+        goto err;
+    if (!EVP_DigestInit_ex(ctx, Hash, NULL)
+        || !EVP_DigestUpdate(ctx, zeroes, sizeof(zeroes))
+        || !EVP_DigestUpdate(ctx, mHash, hLen))
+        goto err;
+    if (sLen && !EVP_DigestUpdate(ctx, salt, sLen))
+        goto err;
+    if (!EVP_DigestFinal_ex(ctx, H, NULL))
+        goto err;
+
+    /* Generate dbMask in place then perform XOR on it */
+    if (PKCS1_MGF1(EM, maskedDBLen, H, hLen, mgf1Hash))
+        goto err;
+
+    p = EM;
+
+    /*
+     * Initial PS XORs with all zeroes which is a NOP so just update pointer.
+     * Note from a test above this value is guaranteed to be non-negative.
+     */
+    p += emLen - sLen - hLen - 2;
+    *p++ ^= 0x1;
+    if (sLen > 0) {
+        for (i = 0; i < sLen; i++)
+            *p++ ^= salt[i];
+    }
+    if (MSBits)
+        EM[0] &= 0xFF >> (8 - MSBits);
+
+    /* H is already in place so just set final 0xbc */
+
+    EM[emLen - 1] = 0xbc;
+
+    ret = 1;
+
+ err:
+    EVP_MD_CTX_free(ctx);
+    OPENSSL_clear_free(salt, (size_t)sLen); /* salt != NULL implies sLen > 0 */
+
+    return ret;
+
 }
 
 static inline int
@@ -176,6 +340,8 @@ rsa_signverify_init(void *vctx, void *provkey,
     }
 
     prsactx->operation = operation;
+    prsactx->saltlen = RSA_PSS_SALTLEN_AUTO_DIGEST_MAX;
+    prsactx->min_saltlen = -1;
     /* Default provider sets pad mode to RSA_PKCS1_PADDING as the default padding mode. */
     prsactx->pad_type = RTE_CRYPTO_RSA_PADDING_PKCS1_5;
 
@@ -254,6 +420,10 @@ static inline int rsa_sign(const unsigned char *from, int flen,
     pal_rsa_ctx_t pal_ctx = {0};
 
     pal_ctx.padding = ctx->pad_type;
+    if (pal_ctx.padding == RSA_PKCS1_PSS_PADDING)
+    {
+        pal_ctx.padding = RTE_CRYPTO_RSA_PADDING_NONE;
+    }
     pal_ctx.async_cb = provider_ossl_handle_async_job;
 
     if ((pal_ctx.use_crt_method = ctx->key->use_crt) == 1)
@@ -278,6 +448,10 @@ rsa_verify( unsigned char * decrypt_buf, const unsigned char *sign,
     pal_rsa_ctx_t pal_ctx = {0};
 
     pal_ctx.padding = ctx->pad_type;
+    if (pal_ctx.padding == RSA_PKCS1_PSS_PADDING)
+    {
+        pal_ctx.padding = RTE_CRYPTO_RSA_PADDING_NONE;
+    }
     pal_ctx.async_cb = provider_ossl_handle_async_job;
 
     rsa_xform_non_crt_setup(ctx->key, &pal_ctx);
@@ -328,6 +502,115 @@ static int prov_rsa_sign(void *vctx, unsigned char *sig, size_t *siglen,
     return 1;
 }
 
+int prov_rsa_verify_PKCS1_PSS_mgf1(prov_rsa_key_data *rsa, const unsigned char *mHash,
+                              const EVP_MD *Hash, const EVP_MD *mgf1Hash,
+                              const unsigned char *EM, int sLen)
+{
+    int i;
+    int ret = 0;
+    int hLen, maskedDBLen, MSBits, emLen;
+    const unsigned char *H;
+    unsigned char *DB = NULL;
+    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    unsigned char H_[EVP_MAX_MD_SIZE];
+
+    if (ctx == NULL)
+        goto err;
+
+    if (mgf1Hash == NULL)
+        mgf1Hash = Hash;
+
+    hLen = EVP_MD_get_size(Hash);
+    if (hLen < 0)
+        goto err;
+    /*-
+     * Negative sLen has special meanings:
+     *      -1      sLen == hLen
+     *      -2      salt length is autorecovered from signature
+     *      -3      salt length is maximized
+     *      -4      salt length is autorecovered from signature
+     *      -N      reserved
+     */
+    if (sLen == RSA_PSS_SALTLEN_DIGEST) {
+        sLen = hLen;
+    } else if (sLen < RSA_PSS_SALTLEN_AUTO_DIGEST_MAX) {
+        ERR_raise(ERR_LIB_RSA, RSA_R_SLEN_CHECK_FAILED);
+        goto err;
+    }
+
+    MSBits = (rsa->n_len - 1) & 0x7;
+    emLen = rsa->n_len;
+    if (EM[0] & (0xFF << MSBits)) {
+        ERR_raise(ERR_LIB_RSA, RSA_R_FIRST_OCTET_INVALID);
+        goto err;
+    }
+    if (MSBits == 0) {
+        EM++;
+        emLen--;
+    }
+    if (emLen < hLen + 2) {
+        ERR_raise(ERR_LIB_RSA, RSA_R_DATA_TOO_LARGE);
+        goto err;
+    }
+    if (sLen == RSA_PSS_SALTLEN_MAX) {
+        sLen = emLen - hLen - 2;
+    } else if (sLen > emLen - hLen - 2) { /* sLen can be small negative */
+        ERR_raise(ERR_LIB_RSA, RSA_R_DATA_TOO_LARGE);
+        goto err;
+    }
+    if (EM[emLen - 1] != 0xbc) {
+        ERR_raise(ERR_LIB_RSA, RSA_R_LAST_OCTET_INVALID);
+        goto err;
+    }
+    maskedDBLen = emLen - hLen - 1;
+    H = EM + maskedDBLen;
+    DB = OPENSSL_malloc(maskedDBLen);
+    if (DB == NULL)
+        goto err;
+    if (PKCS1_MGF1(DB, maskedDBLen, H, hLen, mgf1Hash) < 0)
+        goto err;
+    for (i = 0; i < maskedDBLen; i++)
+        DB[i] ^= EM[i];
+    if (MSBits)
+        DB[0] &= 0xFF >> (8 - MSBits);
+    for (i = 0; DB[i] == 0 && i < (maskedDBLen - 1); i++) ;
+    if (DB[i++] != 0x1) {
+        ERR_raise(ERR_LIB_RSA, RSA_R_SLEN_RECOVERY_FAILED);
+        goto err;
+    }
+    if (sLen != RSA_PSS_SALTLEN_AUTO
+            && sLen != RSA_PSS_SALTLEN_AUTO_DIGEST_MAX
+            && (maskedDBLen - i) != sLen) {
+        ERR_raise_data(ERR_LIB_RSA, RSA_R_SLEN_CHECK_FAILED,
+                       "expected: %d retrieved: %d", sLen,
+                       maskedDBLen - i);
+        goto err;
+    }
+    if (!EVP_DigestInit_ex(ctx, Hash, NULL)
+        || !EVP_DigestUpdate(ctx, zeroes, sizeof(zeroes))
+        || !EVP_DigestUpdate(ctx, mHash, hLen))
+        goto err;
+    if (maskedDBLen - i) {
+        if (!EVP_DigestUpdate(ctx, DB + i, maskedDBLen - i))
+            goto err;
+    }
+    if (!EVP_DigestFinal_ex(ctx, H_, NULL))
+        goto err;
+    if (memcmp(H_, H, hLen)) {
+        ERR_raise(ERR_LIB_RSA, RSA_R_BAD_SIGNATURE);
+        ret = 0;
+    } else {
+        ret = 1;
+    }
+
+ err:
+    OPENSSL_free(DB);
+    EVP_MD_CTX_free(ctx);
+
+    return ret;
+
+}
+
 static int prov_rsa_verify(void *vctx, const unsigned char *sig,
         size_t siglen, const unsigned char *tbs,
         size_t tbslen)
@@ -359,7 +642,9 @@ static void rsa_freectx(void *vctx)
     __prov_rsa_freedata(prsactx->key);
     EVP_MD_CTX_free(prsactx->mdctx);
     EVP_MD_free(prsactx->md);
+    EVP_MD_free(prsactx->mgf1_md);
     OPENSSL_free(prsactx->propq);
+    free_tbuf(prsactx);
     OPENSSL_clear_free(prsactx, sizeof(*prsactx));
 
     return;
@@ -370,6 +655,7 @@ static int rsa_set_ctx_params(void *vctx, const OSSL_PARAM params[])
     PROV_RSA_CTX *prsactx = (PROV_RSA_CTX *) vctx;
     const OSSL_PARAM *p;
     int pad_type;
+    int saltlen;
 
     if (prsactx == NULL)
         return 0;
@@ -417,6 +703,16 @@ static int rsa_set_ctx_params(void *vctx, const OSSL_PARAM params[])
             case RSA_NO_PADDING:
                 prsactx->pad_type = RTE_CRYPTO_RSA_PADDING_NONE;
                 break;
+            case RSA_PKCS1_PSS_PADDING:
+                 prsactx->pad_type = RSA_PKCS1_PSS_PADDING;
+                if ((prsactx->operation
+                     & (EVP_PKEY_OP_SIGN | EVP_PKEY_OP_VERIFY)) == 0) {
+                    fprintf(stderr,
+                           "%s:%d:%s(): RSA PSS padding only allowed for sign and verify operations\n",
+                            __FILE__, __LINE__, __func__);
+                    return 0;
+                }
+                break;
             default:
                 fprintf(stderr,
                         "%s:%d:%s(): RSA padding modes supported by mrvl_dpdk_provider"
@@ -427,11 +723,86 @@ static int rsa_set_ctx_params(void *vctx, const OSSL_PARAM params[])
         }
     }
 
+    p = OSSL_PARAM_locate_const(params, OSSL_SIGNATURE_PARAM_PSS_SALTLEN);
+    if (p != NULL) {
+        if (prsactx->pad_type != RSA_PKCS1_PSS_PADDING) {
+            ERR_raise_data(ERR_LIB_PROV, PROV_R_NOT_SUPPORTED,
+                           "PSS saltlen can only be specified if "
+                           "PSS padding has been specified first");
+            return 0;
+        }
+
+        switch (p->data_type) {
+        case OSSL_PARAM_INTEGER: /* Support for legacy pad mode number */
+            if (!OSSL_PARAM_get_int(p, &saltlen))
+                return 0;
+            break;
+        case OSSL_PARAM_UTF8_STRING:
+            if (strcmp(p->data, OSSL_PKEY_RSA_PSS_SALT_LEN_DIGEST) == 0)
+                saltlen = RSA_PSS_SALTLEN_DIGEST;
+            else if (strcmp(p->data, OSSL_PKEY_RSA_PSS_SALT_LEN_MAX) == 0)
+                saltlen = RSA_PSS_SALTLEN_MAX;
+            else if (strcmp(p->data, OSSL_PKEY_RSA_PSS_SALT_LEN_AUTO) == 0)
+                saltlen = RSA_PSS_SALTLEN_AUTO;
+            else if (strcmp(p->data, OSSL_PKEY_RSA_PSS_SALT_LEN_AUTO_DIGEST_MAX) == 0)
+                saltlen = RSA_PSS_SALTLEN_AUTO_DIGEST_MAX;
+            else
+                saltlen = atoi(p->data);
+            break;
+        default:
+            return 0;
+        }
+
+        /*
+         * RSA_PSS_SALTLEN_AUTO_DIGEST_MAX seems curiously named in this check.
+         * Contrary to what it's name suggests, it's the currently lowest
+         * saltlen number possible.
+         */
+        if (saltlen < RSA_PSS_SALTLEN_AUTO_DIGEST_MAX) {
+            ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_SALT_LENGTH);
+            return 0;
+        }
+
+        if (prov_rsa_pss_restricted(prsactx)) {
+            switch (saltlen) {
+            case RSA_PSS_SALTLEN_AUTO:
+            case RSA_PSS_SALTLEN_AUTO_DIGEST_MAX:
+                if (prsactx->operation == EVP_PKEY_OP_VERIFY) {
+                    ERR_raise_data(ERR_LIB_PROV, PROV_R_INVALID_SALT_LENGTH,
+                                   "Cannot use autodetected salt length");
+                    return 0;
+                }
+                break;
+            case RSA_PSS_SALTLEN_DIGEST:
+                if (prsactx->min_saltlen > EVP_MD_get_size(prsactx->md)) {
+                    ERR_raise_data(ERR_LIB_PROV,
+                                   PROV_R_PSS_SALTLEN_TOO_SMALL,
+                                   "Should be more than %d, but would be "
+                                   "set to match digest size (%d)",
+                                   prsactx->min_saltlen,
+                                   EVP_MD_get_size(prsactx->md));
+                    return 0;
+                }
+                break;
+            default:
+                if (saltlen >= 0 && saltlen < prsactx->min_saltlen) {
+                    ERR_raise_data(ERR_LIB_PROV,
+                                   PROV_R_PSS_SALTLEN_TOO_SMALL,
+                                   "Should be more than %d, "
+                                   "but would be set to %d",
+                                   prsactx->min_saltlen, saltlen);
+                    return 0;
+                }
+            }
+        }
+    }
+    prsactx->saltlen = saltlen;
     return 1;
 }
 
 static const OSSL_PARAM settable_ctx_params[] = {
     OSSL_PARAM_utf8_string(OSSL_SIGNATURE_PARAM_PAD_MODE, NULL, 0),
+    OSSL_PARAM_utf8_string(OSSL_SIGNATURE_PARAM_PSS_SALTLEN, NULL, 0),
     OSSL_PARAM_END
 };
 
@@ -457,8 +828,7 @@ static int rsa_digest_sign_final(void *vprsactx, unsigned char *sig,
     int ret = 0;
 
     if (unlikely
-            (prsactx->mdctx == NULL || md_type == NID_undef
-             || prsactx->pad_type != RTE_CRYPTO_RSA_PADDING_PKCS1_5)) {
+            (prsactx->mdctx == NULL || md_type == NID_undef)) {
         fprintf(stderr, "%s:%d%s() Sanity check failed\n",__FILE__, __LINE__, __func__);
         return 0;
     }
@@ -478,33 +848,86 @@ static int rsa_digest_sign_final(void *vprsactx, unsigned char *sig,
         return 0;
     }
 
-    /* Compute the EMSA-PKCS1-V1_5 encoded digest. This encoding is not
-     * applicable to RSA-PSS sign. PSS mode is not supported in HW at this
-     * point of time. */
-    if (md_type == NID_md5_sha1) {
-        if (dlen != SSL_SIG_LENGTH) {
-            fprintf(stderr,
-                    "%s:%d:%s(): Invalid digest size for MD5+SHA1\n",__FILE__, __LINE__, __func__);
-            return 0;
+    switch (prsactx->pad_type) {
+        case RTE_CRYPTO_RSA_PADDING_PKCS1_5 || RTE_CRYPTO_RSA_PADDING_NONE:
+        {
+            /* Compute the EMSA-PKCS1-V1_5 encoded digest. This encoding is not
+            * applicable to RSA-PSS sign. PSS mode is not supported in HW at this
+            * point of time. */
+            if (md_type == NID_md5_sha1) {
+                if (dlen != SSL_SIG_LENGTH) {
+                    fprintf(stderr,
+                        "%s:%d:%s(): Invalid digest size for MD5+SHA1\n",__FILE__, __LINE__, __func__);
+                    return 0;
+                }
+                encoded_len = SSL_SIG_LENGTH;
+                encoded_digest = digest;
+            } else {
+                if (!encode_pkcs1(&tmp, &encoded_len, md_type, digest, dlen))
+                    goto err;
+                encoded_digest = tmp;
+            }
+
+            if (encoded_len + RSA_PKCS1_PADDING_SIZE >
+                    prov_rsa_key_len(prsactx->key)) {
+                fprintf(stderr,
+                        "%s:%d:%s(): Encoded digest too big for RSA key\n",
+                        __FILE__, __LINE__, __func__);
+                goto err;
+            }
+
+            ret = prov_rsa_sign(vprsactx, sig, siglen, sigsize, encoded_digest,
+                    (size_t) encoded_len);
         }
-        encoded_len = SSL_SIG_LENGTH;
-        encoded_digest = digest;
-    } else {
-        if (!encode_pkcs1(&tmp, &encoded_len, md_type, digest, dlen))
-            goto err;
-        encoded_digest = tmp;
-    }
+        break;
 
-    if (encoded_len + RSA_PKCS1_PADDING_SIZE >
-            prov_rsa_key_len(prsactx->key)) {
-        fprintf(stderr,
-                "%s:%d:%s(): Encoded digest too big for RSA key\n",
-                __FILE__, __LINE__, __func__);
-        goto err;
-    }
+        case RSA_PKCS1_PSS_PADDING:
+            /* Check PSS restrictions */
+            if (prov_rsa_pss_restricted(prsactx)) {
+                switch (prsactx->saltlen) {
+                case RSA_PSS_SALTLEN_DIGEST:
+                    if (prsactx->min_saltlen > EVP_MD_get_size(prsactx->md)) {
+                        ERR_raise_data(ERR_LIB_PROV,
+                                       PROV_R_PSS_SALTLEN_TOO_SMALL,
+                                       "minimum salt length set to %d, "
+                                       "but the digest only gives %d",
+                                       prsactx->min_saltlen,
+                                       EVP_MD_get_size(prsactx->md));
+                        return 0;
+                    }
+                default:
+                    if (prsactx->saltlen >= 0
+                        && prsactx->saltlen < prsactx->min_saltlen) {
+                        ERR_raise_data(ERR_LIB_PROV,
+                                       PROV_R_PSS_SALTLEN_TOO_SMALL,
+                                       "minimum salt length set to %d, but the"
+                                       "actual salt length is only set to %d",
+                                       prsactx->min_saltlen,
+                                       prsactx->saltlen);
+                        return 0;
+                    }
+                    break;
+                }
+            }
+            if (!setup_tbuf(prsactx))
+                return 0;
+            if (!prov_padding_add_PKCS1_PSS_mgf1(prsactx->key,
+                                                prsactx->tbuf, digest,
+                                                prsactx->md, prsactx->mgf1_md,
+                                                prsactx->saltlen)) {
+                ERR_raise(ERR_LIB_PROV, ERR_R_RSA_LIB);
+                return 0;
+            }
+            ret = prov_rsa_sign(vprsactx, sig, siglen, sigsize, prsactx->tbuf,
+                                prsactx->key->n_len);
+            clean_tbuf(prsactx);
+            break;
 
-    ret = prov_rsa_sign(vprsactx, sig, siglen, sigsize, encoded_digest,
-            (size_t) encoded_len);
+        default:
+            ERR_raise_data(ERR_LIB_PROV, PROV_R_INVALID_PADDING_MODE,
+                           "Only X.931, PKCS#1 v1.5 or PSS padding allowed");
+            return 0;
+    }
 err:
     OPENSSL_free(tmp);
     return ret;
@@ -523,8 +946,7 @@ static int rsa_digest_verify_final(void *vprsactx,
     int ret = 0;
 
     if (unlikely
-            (prsactx->mdctx == NULL
-             || prsactx->pad_type != RTE_CRYPTO_RSA_PADDING_PKCS1_5)) {
+            (prsactx->mdctx == NULL)) {
         fprintf(stderr, "%s:%d%s() Sanity check failed\n",__FILE__, __LINE__, __func__);
         return 0;
     }
@@ -535,42 +957,88 @@ static int rsa_digest_verify_final(void *vprsactx,
         return 0;
     }
 
-    ret = rsa_verify(decrypt_buf, sig, siglen, vprsactx);
+    switch (prsactx->pad_type) {
+        case RTE_CRYPTO_RSA_PADDING_PKCS1_5 || RTE_CRYPTO_RSA_PADDING_NONE:
+            {
+                ret = rsa_verify(decrypt_buf, sig, siglen, vprsactx);
+                decrypt_len = ret;
 
-    decrypt_len = ret;
+                if ((ret < 0) || ((size_t) digest_len > decrypt_len)) {
+                    fprintf(stderr,
+                        "%s:%d:%s(): Error in decrypting the sign (or) mdlen %zu >  dlen %zu\n",
+                        __FILE__, __LINE__, __func__,(size_t) digest_len, decrypt_len);
+                    return 0;
+                }
 
-    if ((ret < 0) || ((size_t) digest_len > decrypt_len)) {
-        fprintf(stderr,
-                "%s:%d:%s(): Error in decrypting the sign (or) mdlen %zu >  dlen %zu\n",
-                __FILE__, __LINE__, __func__,(size_t) digest_len, decrypt_len);
-        return 0;
-    }
+                /*
+                * If recovering the digest, extract a digest-sized output from the end
+                * of |decrypt_buf| for |encode_pkcs1|, then compare the decryption
+                * output as in a standard verification.
+                */
+                tmp = decrypt_buf + decrypt_len - digest_len;
 
-    /*
-     * If recovering the digest, extract a digest-sized output from the end
-     * of |decrypt_buf| for |encode_pkcs1|, then compare the decryption
-     * output as in a standard verification.
-     */
-    tmp = decrypt_buf + decrypt_len - digest_len;
+                if (unlikely
+                    (!encode_pkcs1
+                    (&encoded, &encoded_len, EVP_MD_type(prsactx->md), tmp,
+                    digest_len))) {
+                        fprintf(stderr, "%s:%d:%s(): Error in encode_pkcs1\n", __FILE__,
+                            __LINE__, __func__);
+                        goto err;
+                    }
 
-    if (unlikely
-            (!encode_pkcs1
-             (&encoded, &encoded_len, EVP_MD_type(prsactx->md), tmp,
-              digest_len))) {
-        fprintf(stderr, "%s:%d:%s(): Error in encode_pkcs1\n", __FILE__,
-                __LINE__, __func__);
-        goto err;
-    }
+                if (encoded_len != decrypt_len
+                    || memcmp(encoded, decrypt_buf, encoded_len) != 0) {
+                        fprintf(stderr, "%s:%d:%s(): Digest verification NOT OK\n",
+                            __FILE__, __LINE__, __func__);
+                    goto err;
+                }
 
-    if (encoded_len != decrypt_len
-            || memcmp(encoded, decrypt_buf, encoded_len) != 0) {
-        fprintf(stderr, "%s:%d:%s(): Digest verification NOT OK\n",
-                __FILE__, __LINE__, __func__);
-        goto err;
-    }
+                ret = 1;
+            }
+            break;
 
-    ret = 1;
+        case RSA_PKCS1_PSS_PADDING:
+            {
+                size_t mdsize;
 
+                /*
+                 * We need to check this for the RSA_verify_PKCS1_PSS_mgf1()
+                 * call
+                 */
+                mdsize = EVP_MD_get_size(prsactx->md);
+                if (digest_len != mdsize) {
+                    ERR_raise_data(ERR_LIB_PROV, PROV_R_INVALID_DIGEST_LENGTH,
+                                   "Should be %d, but got %d",
+                                   mdsize, digest_len);
+                    return 0;
+                }
+
+                if (!setup_tbuf(prsactx))
+                    return 0;
+                ret = rsa_verify(decrypt_buf, sig, siglen, prsactx);
+                if (ret <= 0) {
+                    ERR_raise(ERR_LIB_PROV, ERR_R_RSA_LIB);
+                    return 0;
+                }
+                if ( memcmp(decrypt_buf, digest_buf, digest_len) || (ret <= 0) ) {
+                    fprintf(stderr, "compare failed\n");
+                    return 0;
+                }
+                ret = prov_rsa_verify_PKCS1_PSS_mgf1(prsactx->key, digest_buf,
+                                                prsactx->md, prsactx->mgf1_md,
+                                                prsactx->tbuf,
+                                                prsactx->saltlen);
+                if (ret <= 0) {
+                    ERR_raise(ERR_LIB_PROV, ERR_R_RSA_LIB);
+                    return 0;
+                }
+                return 1;
+            }
+        default:
+            ERR_raise_data(ERR_LIB_PROV, PROV_R_INVALID_PADDING_MODE,
+                           "Only X.931, PKCS#1 v1.5 or PSS padding allowed");
+            return 0;
+        }
 err:
     OPENSSL_free(encoded);
     return ret;
