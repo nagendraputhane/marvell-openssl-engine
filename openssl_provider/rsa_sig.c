@@ -12,6 +12,7 @@
 #include <openssl/params.h>
 #include <openssl/proverr.h>
 #include <openssl/rsa.h>	// RSA_*_PADDING macro declarations
+#include <openssl/rand.h>
 #include "pal.h"
 #include "pal_rsa.h"
 #include "defs.h"
@@ -420,6 +421,9 @@ static inline int rsa_sign(const unsigned char *from, int flen,
     pal_rsa_ctx_t pal_ctx = {0};
 
     pal_ctx.padding = ctx->pad_type;
+
+    /* PSS mode is not supported in HW at this point of time.
+     * we build the PSS-encoded block in SW and pass it to PAL with padding set to NONE (zero) */
     if (pal_ctx.padding == RSA_PKCS1_PSS_PADDING)
     {
         pal_ctx.padding = RTE_CRYPTO_RSA_PADDING_NONE;
@@ -448,6 +452,9 @@ rsa_verify( unsigned char * decrypt_buf, const unsigned char *sign,
     pal_rsa_ctx_t pal_ctx = {0};
 
     pal_ctx.padding = ctx->pad_type;
+
+    /* PSS mode is not supported in HW at this point of time.
+     * we build the PSS-encoded block in SW and pass it to PAL with padding set to NONE (zero) */
     if (pal_ctx.padding == RSA_PKCS1_PSS_PADDING)
     {
         pal_ctx.padding = RTE_CRYPTO_RSA_PADDING_NONE;
