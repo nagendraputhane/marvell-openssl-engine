@@ -226,17 +226,12 @@ static int prov_rsa_fromdata(void *keydata, const OSSL_PARAM params[],
 	    param_qInv && OSSL_PARAM_get_BN(param_qInv, &qInv)) {
 		alloc_sz += BN_num_bytes(p) + BN_num_bytes(q) + BN_num_bytes(dP) +
 			    BN_num_bytes(dQ) + BN_num_bytes(qInv);
-	} else if (param_d && OSSL_PARAM_get_BN(param_d, &d)) {
-		alloc_sz += BN_num_bytes(d);
 	} else {
-		fprintf(stderr, "%s:%d:%s(): Failed to import RSA key "
-				"parameters 'd' or 'p', 'q', 'dP', 'dQ',"
-				" 'qInv'\n",__FILE__, __LINE__, __func__);
-		goto err;
-	}
-
+        if (param_d && OSSL_PARAM_get_BN(param_d, &d)) {
+		    alloc_sz += BN_num_bytes(d);
+	        }
+        }
     }
-
     base = (uint8_t *)pal_malloc(alloc_sz);
     if (unlikely(!base)) {
 	fprintf(stderr, "%s:%d:%s(): Failed to allocate memory for RSA key data\n",
