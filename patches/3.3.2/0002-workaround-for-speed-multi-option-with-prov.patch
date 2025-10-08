@@ -1,34 +1,36 @@
-From cb81e0bc2d74d4b55b1fc98b354eccc9894383dc Mon Sep 17 00:00:00 2001
-From: Sriram Vatala <svatala@marvell.com>
-Date: Fri, 21 Feb 2025 03:29:23 +0000
-Subject: [PATCH 2/3] workaround for speed multi option with dpdk prov
+From beb7f389460ceb504d1c02204054578a6a459900 Mon Sep 17 00:00:00 2001
+From: Garvit Varshney <gvarshney@marvell.com>
+Date: Wed, 8 Oct 2025 13:39:23 -0400
+Subject: [PATCH 2/2] workaround for speed multi option with prov
 
+Signed-off-by: Garvit Varshney <gvarshney@marvell.com>
+Signed-off-by: Venkata Ravichandra Mynidi <vmynidi@marvell.com>
 Signed-off-by: Sriram Vatala <svatala@marvell.com>
 ---
- apps/speed.c | 67 ++++++++++++++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 67 insertions(+)
+ apps/speed.c | 80 ++++++++++++++++++++++++++++++++++++++++++++--------
+ 1 file changed, 68 insertions(+), 12 deletions(-)
 
 diff --git a/apps/speed.c b/apps/speed.c
-index d8290dda37..9cc97543b8 100644
+index 6ec6b80e48..2b66fcfe62 100644
 --- a/apps/speed.c
 +++ b/apps/speed.c
 @@ -103,6 +103,15 @@ VirtualLock(
  # define RSA_DEFAULT_PRIME_NUM 2
  #endif
- 
+
 +#define MAX_PROV_OPTS 4
 +struct {
 +    const char *names[MAX_PROV_OPTS];
 +    EVP_CIPHER **evp_cipher;
 +    const char *evp_opt;
-+    uint8_t dpdk_prov_en;
++    uint8_t mrvl_prov_en;
 +    uint8_t cnt;
 +} prov_opts;
 +
  typedef struct openssl_speed_sec_st {
      int sym;
      int rsa;
-@@ -1746,6 +1755,32 @@ static inline void cpu_pause()
+@@ -1849,6 +1858,32 @@ static inline void cpu_pause()
         __asm__ __volatile__ ("nop");
  }
  static uint64_t *shm;
@@ -61,7 +63,7 @@ index d8290dda37..9cc97543b8 100644
  int speed_main(int argc, char **argv)
  {
      CONF *conf = NULL;
-@@ -1928,6 +1963,9 @@ int speed_main(int argc, char **argv)
+@@ -2031,6 +2066,9 @@ int speed_main(int argc, char **argv)
                  BIO_printf(bio_err, "%s: -evp option cannot be used more than once\n", prog);
                  goto opterr;
              }
@@ -71,7 +73,7 @@ index d8290dda37..9cc97543b8 100644
              ERR_set_mark();
              if (!opt_cipher_silent(opt_arg(), &evp_cipher)) {
                  if (have_md(opt_arg()))
-@@ -1941,6 +1979,7 @@ int speed_main(int argc, char **argv)
+@@ -2044,6 +2082,7 @@ int speed_main(int argc, char **argv)
                  goto end;
              }
              ERR_pop_to_mark();
@@ -79,7 +81,7 @@ index d8290dda37..9cc97543b8 100644
              doit[D_EVP] = 1;
              break;
          case OPT_HMAC:
-@@ -2021,8 +2060,21 @@ int speed_main(int argc, char **argv)
+@@ -2124,8 +2163,22 @@ int speed_main(int argc, char **argv)
                  goto end;
              break;
          case OPT_PROV_CASES:
@@ -87,8 +89,9 @@ index d8290dda37..9cc97543b8 100644
 +	    if (o == OPT_PROV_PROVIDER) {
 +		if (prov_opts.cnt < MAX_PROV_OPTS) {
 +			prov_opts.names[prov_opts.cnt++] = opt_arg();
-+			if (strcmp(opt_arg(), "dpdk_provider") == 0)
-+				prov_opts.dpdk_prov_en= 1;
++			if ((strcmp(opt_arg(), "dpdk_provider") == 0) ||
++				(strcmp(opt_arg(), "lc_provider") == 0))
++				prov_opts.mrvl_prov_en= 1;
 +		}
 +	    }
 +	    else if (!opt_provider(o))
@@ -101,11 +104,11 @@ index d8290dda37..9cc97543b8 100644
              break;
          case OPT_CONFIG:
              conf = app_load_config_modules(opt_arg());
-@@ -2064,6 +2116,13 @@ int speed_main(int argc, char **argv)
+@@ -2167,6 +2220,13 @@ int speed_main(int argc, char **argv)
          }
      }
- 
-+    if (!prov_opts.dpdk_prov_en || !multi) {
+
++    if (!prov_opts.mrvl_prov_en || !multi) {
 +	    if (handle_defered_opts())
 +		    goto end;
 +    }
@@ -115,20 +118,39 @@ index d8290dda37..9cc97543b8 100644
      /* find all KEMs currently available */
      kem_stack = sk_EVP_KEM_new(kems_cmp);
      EVP_KEM_do_all_provided(app_get0_libctx(), collect_kem, kem_stack);
-@@ -2162,6 +2221,7 @@ int speed_main(int argc, char **argv)
+@@ -2265,6 +2325,7 @@ int speed_main(int argc, char **argv)
      sk_EVP_SIGNATURE_pop_free(sig_stack, EVP_SIGNATURE_free);
      sig_stack = NULL;
- 
+
 +skip_provider_algo_load:
      /* Remaining arguments are algorithms. */
      argc = opt_num_rest();
      argv = opt_rest();
-@@ -2450,6 +2510,13 @@ int speed_main(int argc, char **argv)
+@@ -2397,18 +2458,6 @@ int speed_main(int argc, char **argv)
+         }
+     }
+
+-    /* Sanity checks */
+-    if (aead) {
+-        if (evp_cipher == NULL) {
+-            BIO_printf(bio_err, "-aead can be used only with an AEAD cipher\n");
+-            goto end;
+-        } else if (!(EVP_CIPHER_get_flags(evp_cipher) &
+-                     EVP_CIPH_FLAG_AEAD_CIPHER)) {
+-            BIO_printf(bio_err, "%s is not an AEAD cipher\n",
+-                       EVP_CIPHER_get0_name(evp_cipher));
+-            goto end;
+-        }
+-    }
+     if (kems_algs_len > 0) {
+         int maxcnt = get_max(kems_doit, kems_algs_len);
+
+@@ -2553,6 +2602,13 @@ int speed_main(int argc, char **argv)
              e = NULL;
          }
      }
 +
-+    if (multi && prov_opts.dpdk_prov_en) {
++    if (multi && prov_opts.mrvl_prov_en) {
 +	if (handle_defered_opts()) {
 +	    exit(1);
 +	}
@@ -137,6 +159,6 @@ index d8290dda37..9cc97543b8 100644
      static struct timespec start, end;
      if(multi)
      {
--- 
-2.48.1
+--
+2.47.3
 
