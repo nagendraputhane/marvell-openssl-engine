@@ -39,7 +39,7 @@ PC_FILE := $(DPDK_PC)/libdpdk.pc
 CFLAGS = $(shell $(PKG_CONFIG_CMD) --cflags libdpdk)
 CFLAGS += -I$(DPDK_INSTALL)/include
 CFLAGS += -I$(DPDK_INSTALL)/$(shell $(PKG_CONFIG_CMD) --variable=includedir libdpdk)
-CFLAGS += -I$(DAO_LC_INSTALL)/../lib/liquid_crypto
+CFLAGS += -I$(DAO_LC_INSTALL)/../lib/liquid_crypto -I$(DAO_LC_INSTALL)/../lib/eth_transport
 CFLAGS += -DOSSL_CONF_INIT
 
 LDFLAGS_SHARED = -L$(DPDK_INSTALL)/$(shell $(PKG_CONFIG_CMD) --variable=libdir libdpdk)
