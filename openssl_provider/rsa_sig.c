@@ -426,7 +426,7 @@ static inline int rsa_sign(const unsigned char *from, int flen,
      * we build the PSS-encoded block in SW and pass it to PAL with padding set to NONE (zero) */
     if (pal_ctx.padding == RSA_PKCS1_PSS_PADDING)
     {
-        pal_ctx.padding = RTE_CRYPTO_RSA_PADDING_NONE;
+        pal_ctx.padding = PAL_RSA_NO_PADDING;
     }
     pal_ctx.async_cb = provider_ossl_handle_async_job;
 
@@ -457,7 +457,7 @@ rsa_verify( unsigned char * decrypt_buf, const unsigned char *sign,
      * we build the PSS-encoded block in SW and pass it to PAL with padding set to NONE (zero) */
     if (pal_ctx.padding == RSA_PKCS1_PSS_PADDING)
     {
-        pal_ctx.padding = RTE_CRYPTO_RSA_PADDING_NONE;
+        pal_ctx.padding = PAL_RSA_NO_PADDING;
     }
     pal_ctx.async_cb = provider_ossl_handle_async_job;
 
@@ -856,7 +856,8 @@ static int rsa_digest_sign_final(void *vprsactx, unsigned char *sig,
     }
 
     switch (prsactx->pad_type) {
-        case RTE_CRYPTO_RSA_PADDING_PKCS1_5 || RTE_CRYPTO_RSA_PADDING_NONE:
+        case PAL_RSA_NO_PADDING:
+        case PAL_RSA_PKCS1_PADDING:
         {
             /* Compute the EMSA-PKCS1-V1_5 encoded digest. This encoding is not
             * applicable to RSA-PSS sign. PSS mode is not supported in HW at this
@@ -965,7 +966,8 @@ static int rsa_digest_verify_final(void *vprsactx,
     }
 
     switch (prsactx->pad_type) {
-        case RTE_CRYPTO_RSA_PADDING_PKCS1_5 || RTE_CRYPTO_RSA_PADDING_NONE:
+        case PAL_RSA_NO_PADDING:
+        case PAL_RSA_PKCS1_PADDING:
             {
                 ret = rsa_verify(decrypt_buf, sig, siglen, vprsactx);
                 decrypt_len = ret;
@@ -1022,13 +1024,9 @@ static int rsa_digest_verify_final(void *vprsactx,
 
                 if (!setup_tbuf(prsactx))
                     return 0;
-                ret = rsa_verify(decrypt_buf, sig, siglen, prsactx);
+                ret = rsa_verify(prsactx->tbuf, sig, siglen, prsactx);
                 if (ret <= 0) {
                     ERR_raise(ERR_LIB_PROV, ERR_R_RSA_LIB);
-                    return 0;
-                }
-                if ( memcmp(decrypt_buf, digest_buf, digest_len) || (ret <= 0) ) {
-                    fprintf(stderr, "compare failed\n");
                     return 0;
                 }
                 ret = prov_rsa_verify_PKCS1_PSS_mgf1(prsactx->key, digest_buf,
