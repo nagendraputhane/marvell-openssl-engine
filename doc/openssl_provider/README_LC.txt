@@ -276,3 +276,5 @@ d). Benchmark AES-128-CBC async mode
 - AES operations are limited to a payload size of 5120 bytes. Operations exceeding this size will fail with an error.
 - Multi-process mode is not supported in the FreeBSD environment.
 - EC Point Multiplication is currently not supported.
+- OpenSSL speed test supports upto 8 processes with LC provider.
+- ECDSA sign and verify operations are supported only with s_server and s_client and speed app is not yet supported.
