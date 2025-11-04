@@ -8,11 +8,10 @@
 #include <string.h>
 #include <pthread.h>
 #include <rte_eal.h>
+#include <openssl/ssl3.h>
 #include "pal.h"
 #include "defs.h"
 
-
-#define TEST_LC_MAX_OUTPUT_LEN 5120
 struct global_params glb_params;
 int cpt_num_asym_requests_in_flight = 0;
 int cpt_num_cipher_pipeline_requests_in_flight = 0;
@@ -29,6 +28,8 @@ static FILE* log_fp = NULL;
 int pal_crypto_init(int argc, char *argv[], bool eal_init, char *driver_name)
 {
 
+	struct dao_lc_feature_params feature_params;
+	uint32_t cmd_seg_sz = 0;
 	struct dao_lc_dev_conf dev_conf;
 	struct dao_lc_qp_conf qp_conf;
 	struct dao_lc_info *info;
@@ -91,20 +92,45 @@ int pal_crypto_init(int argc, char *argv[], bool eal_init, char *driver_name)
 		memset(&dev_conf, 0, sizeof(dev_conf));
 		dev_conf.dev_id = dev_id;
 		dev_conf.nb_qp = info->nb_qp[dev_id];
+		dev_conf.cmd_qp_idx = 0;
 
 		ret = dao_liquid_crypto_dev_create(&dev_conf);
 		if (ret < 0) {
 			fprintf(stderr, "Could not create liquid crypto device for device %u", dev_id);
 			goto fini;
 		}
+		memset(&feature_params, 0, sizeof(feature_params));
+		feature_params.cmd_qp = true;
+
+		cmd_seg_sz = dao_liquid_crypto_seg_size_calc(&feature_params);
+		if (cmd_seg_sz == 0) {
+			fprintf(stderr, "Could not calculate command queue pair segment size");
+			info->nb_qp[dev_id] = dev_id;
+			goto dev_destroy;
+		}
 
 		memset(&qp_conf, 0, sizeof(qp_conf));
-
+		/* Configure command queue pair */
 		qp_conf.nb_desc = 2048;
 		qp_conf.out_of_order_delivery_en = false;
-		qp_conf.max_seg_size = TEST_LC_MAX_OUTPUT_LEN;
+		qp_conf.max_seg_size = cmd_seg_sz;
+
+		ret = dao_liquid_crypto_qp_configure(dev_id, dev_conf.cmd_qp_idx, &qp_conf);
+		if (ret < 0) {
+			fprintf(stderr, "Could not configure command queue pair");
+			info->nb_qp[dev_id] = dev_id;
+			goto dev_destroy;
+		}
+
+		/* Configure data queue pairs */
+		qp_conf.nb_desc = 2048;
+		qp_conf.out_of_order_delivery_en = false;
+		qp_conf.max_seg_size = SSL3_RT_MAX_PACKET_SIZE;
 
 		for (qp_id = 0; qp_id < info->nb_qp[dev_id]; qp_id++) {
+			/* Skip command queue pair */
+			if (qp_id == dev_conf.cmd_qp_idx)
+				continue;
 			ret = dao_liquid_crypto_qp_configure(dev_id, qp_id, &qp_conf);
 			if (ret < 0) {
 				fprintf(stderr, "Could not configure liquid crypto queue pair for device \n");
