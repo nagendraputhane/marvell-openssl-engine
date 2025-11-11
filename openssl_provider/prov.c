@@ -11,6 +11,7 @@
 #include <openssl/params.h>
 #include <prov/names.h>
 #include "prov.h"
+#include<signal.h>
 
 #define ALGC(NAMES, FUNC, CHECK) { { NAMES, prop_name, FUNC }, CHECK }
 #define ALG(NAMES, FUNC) ALGC(NAMES, FUNC, NULL)
@@ -22,6 +23,7 @@ char provider_name[32];
 char prop_name[32];
 char des_ec[64];
 char des_rsa[64];
+static void *g_provctx = NULL;
 
 /* Sym Cipher */
 extern const OSSL_DISPATCH prov_aes256cbc_functions[];
@@ -69,6 +71,18 @@ static const OSSL_PARAM prov_param_types[] = {
     OSSL_PARAM_DEFN(OSSL_PROV_PARAM_STATUS, OSSL_PARAM_INTEGER, NULL, 0),
     OSSL_PARAM_END
 };
+static void prov_teardown(void *provctx);
+
+static inline int sigint_handler(int signum)
+{
+	if(g_provctx != NULL)
+	{
+		printf("SIGINT received, cleaning up...\n");
+		prov_teardown(g_provctx);
+	}
+	exit(0);
+	return 0;
+}
 
 void get_provider_name()
 {
@@ -289,7 +303,8 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
                                const OSSL_DISPATCH **out,
                                void **provctx)
 {
-    OSSL_LIB_CTX *libctx = NULL;
+	signal(SIGINT,sigint_handler);
+	OSSL_LIB_CTX *libctx = NULL;
 
     get_prop_name_and_desc();
     get_provider_name();
@@ -305,6 +320,7 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
     /* libctx needed to fallback to another (default) provider for any implementaion */
     prov_ctx_set0_libctx(*provctx, libctx);
     prov_ctx_set0_handle(*provctx, handle);
+    g_provctx = *provctx;
 
     *out = prov_dispatch_table;
 
