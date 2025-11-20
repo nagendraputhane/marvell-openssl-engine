@@ -73,15 +73,17 @@ static const OSSL_PARAM prov_param_types[] = {
 };
 static void prov_teardown(void *provctx);
 
-static inline int sigint_handler(int signum)
+static void sigint_handler(int signum)
 {
-	if(g_provctx != NULL)
+	void *tmp_provctx = g_provctx;
+	if(tmp_provctx != NULL)
 	{
-		printf("SIGINT received, cleaning up...\n");
-		prov_teardown(g_provctx);
+		g_provctx = NULL;
+		const char msg[] = "SIGINT received, cleaning up...\n";
+		write(STDERR_FILENO, msg, sizeof(msg) - 1);
+		prov_teardown(tmp_provctx);
 	}
 	exit(0);
-	return 0;
 }
 
 void get_provider_name()
