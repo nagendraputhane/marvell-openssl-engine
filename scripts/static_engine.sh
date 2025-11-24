@@ -1,4 +1,6 @@
 #! /bin/sh
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (C) 2025 Marvell.
 
 if [ -z "$ENGINE_PATH" ]  || [ -z "$RTE_SDK" ]; then
     echo "Please export ENGINE_PATH and RTE_SDK env variables"

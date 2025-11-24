@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (C) 2025 Marvell.
+
 if [ -n "$DPDK_DEVBIND_PATH" ]; then
     File=$DPDK_DEVBIND_PATH/dpdk-devbind.py
 else

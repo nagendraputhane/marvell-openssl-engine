@@ -1,11 +1,7 @@
 From beb7f389460ceb504d1c02204054578a6a459900 Mon Sep 17 00:00:00 2001
-From: Garvit Varshney <gvarshney@marvell.com>
 Date: Wed, 8 Oct 2025 13:39:23 -0400
 Subject: [PATCH 2/2] workaround for speed multi option with prov
 
-Signed-off-by: Garvit Varshney <gvarshney@marvell.com>
-Signed-off-by: Venkata Ravichandra Mynidi <vmynidi@marvell.com>
-Signed-off-by: Sriram Vatala <svatala@marvell.com>
 ---
  apps/speed.c | 80 ++++++++++++++++++++++++++++++++++++++++++++--------
  1 file changed, 68 insertions(+), 12 deletions(-)

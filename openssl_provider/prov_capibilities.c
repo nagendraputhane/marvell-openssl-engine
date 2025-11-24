@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: Marvell-MIT
+ * Copyright (c) 2025 Marvell.
+ */
+
 #include <assert.h>
 #include <string.h>
 #include <openssl/core_dispatch.h>
