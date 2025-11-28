@@ -160,6 +160,10 @@ static inline int ecdsa_sign(int type, const unsigned char *dgst, int dlen,
     BIGNUM *k = BN_new();
     ECDSA_SIG *sig_st = NULL;
     unsigned char *buf = NULL;
+    unsigned char *px_data_orig = NULL;
+    unsigned char *py_data_orig = NULL;
+    unsigned char *pkey_data_orig = NULL;
+    unsigned char *secret_data_orig = NULL;
     int redo, rlen, slen, derlen;
     pal_ecdsa_ctx_t pal_ctx = {0};
     unsigned char *dup_buf = NULL;
@@ -167,21 +171,31 @@ static inline int ecdsa_sign(int type, const unsigned char *dgst, int dlen,
     const EC_GROUP *ecgroup = EC_KEY_get0_group(eckey);
     uint8_t rdata[PCURVES_MAX_DER_SIG_LEN] = {0};
     uint8_t sdata[PCURVES_MAX_DER_SIG_LEN] = {0};
+    int field_size;
 
-    curve_id = get_curve_id(ecgroup);
-    if (!curve_id) {
-        ECerr(EC_F_ECDH_SIMPLE_COMPUTE_KEY, EC_R_INVALID_CURVE);
+    if (px == NULL || py == NULL || k == NULL) {
+        ret = -1;
         goto err;
     }
 
+    curve_id = get_curve_id(ecgroup);
+    if (curve_id < 0) {
+        ECerr(EC_F_ECDH_SIMPLE_COMPUTE_KEY, EC_R_INVALID_CURVE);
+        goto err;
+    }
+    field_size = (EC_GROUP_get_degree(ecgroup) + 7) / 8;
+
     EC_POINT_get_affine_coordinates_GFp(ecgroup, EC_KEY_get0_public_key(eckey), px, py, NULL);
 
-    pal_ctx.x_data = bn_to_crypto_param(px);
-    pal_ctx.x_data_len  = BN_num_bytes(px);
-    pal_ctx.y_data = bn_to_crypto_param(py);;
-    pal_ctx.y_data_len  = BN_num_bytes(py);
-    pal_ctx.pkey = bn_to_crypto_param(EC_KEY_get0_private_key(eckey));
-    pal_ctx.pkey_len = BN_num_bytes(EC_KEY_get0_private_key(eckey));
+    px_data_orig = bn_to_crypto_param(px);
+    pal_ctx.x_data = px_data_orig + PCURVES_MAX_PRIME_LEN - field_size;
+    pal_ctx.x_data_len  = field_size;
+    py_data_orig = bn_to_crypto_param(py);
+    pal_ctx.y_data = py_data_orig + PCURVES_MAX_PRIME_LEN - field_size;
+    pal_ctx.y_data_len  = field_size;
+    pkey_data_orig = bn_to_crypto_param(EC_KEY_get0_private_key(eckey));
+    pal_ctx.pkey = pkey_data_orig + PCURVES_MAX_PRIME_LEN - field_size;
+    pal_ctx.pkey_len = field_size;
     pal_ctx.dgst = dgst;
     pal_ctx.dlen = dlen;
     pal_ctx.curve_id = curve_id;
@@ -199,8 +213,11 @@ static inline int ecdsa_sign(int type, const unsigned char *dgst, int dlen,
             BN_rand_range(k, EC_GROUP_get0_order(ecgroup));
         } while (BN_is_zero(k));
 
-        pal_ctx.secret = bn_to_crypto_param(k);
-        pal_ctx.secret_len = BN_num_bytes(k);
+        if (secret_data_orig)
+            free(secret_data_orig);
+        secret_data_orig = bn_to_crypto_param(k);
+        pal_ctx.secret = secret_data_orig + PCURVES_MAX_PRIME_LEN - field_size;
+        pal_ctx.secret_len = field_size;
         if (!pal_ctx.secret)
             goto err;
 
@@ -228,9 +245,17 @@ static inline int ecdsa_sign(int type, const unsigned char *dgst, int dlen,
     } while (redo);
 
     sig_st = ECDSA_SIG_new();
+    if (sig_st == NULL) {
+        BN_free(rbn);
+        BN_free(sbn);
+        goto err;
+    }
+
     if (!ECDSA_SIG_set0(sig_st, rbn, sbn)) {
         BN_free(rbn);
         BN_free(sbn);
+        ECDSA_SIG_free(sig_st);
+        sig_st = NULL;
         goto err;
     }
 
@@ -252,7 +277,14 @@ err:
     BN_free(k);
     if(buf)
         free(buf);
-
+    if(px_data_orig)
+        free(px_data_orig);
+    if(py_data_orig)
+        free(py_data_orig);
+    if(pkey_data_orig)
+        free(pkey_data_orig);
+    if(secret_data_orig)
+        free(secret_data_orig);
     return ret;
 }
 
@@ -272,14 +304,19 @@ static inline int ecdsa_verify(int type, const unsigned char *dgst, int dgst_len
     int slen;
     BIGNUM *px = BN_new();
     BIGNUM *py = BN_new();
+    unsigned char *px_data_orig = NULL;
+    unsigned char *py_data_orig = NULL;
     int ret = 0;
     (void)type;
+    int field_size;
 
     curve_id = get_curve_id(ecgroup);
-    if (!curve_id) {
+    if (curve_id < 0) {
         ECerr(EC_F_ECDH_SIMPLE_COMPUTE_KEY, EC_R_INVALID_CURVE);
         goto err;
     }
+    /* Get the curve-specific field size in bytes */
+    field_size = (EC_GROUP_get_degree(ecgroup) + 7) / 8;
 
     EC_POINT_get_affine_coordinates_GFp(ecgroup, EC_KEY_get0_public_key(eckey), px, py, NULL);
 
@@ -287,26 +324,27 @@ static inline int ecdsa_verify(int type, const unsigned char *dgst, int dgst_len
         goto err;
 
     ECDSA_SIG_get0(sig_st, &rbn, &sbn);
-
-    rlen = BN_num_bytes(rbn);
-    slen = BN_num_bytes(sbn);
-
-    pal_ctx.x_data = bn_to_crypto_param(px);
-    pal_ctx.x_data_len  = BN_num_bytes(px);
-    pal_ctx.y_data = bn_to_crypto_param(py);;
-    pal_ctx.y_data_len  = BN_num_bytes(py);
-    pal_ctx.rdata = malloc(rlen);
-    pal_ctx.sdata = malloc(slen);
-    pal_ctx.rlen = rlen;
-    pal_ctx.slen = slen;
+    px_data_orig = bn_to_crypto_param(px);
+    pal_ctx.x_data = px_data_orig + PCURVES_MAX_PRIME_LEN - field_size;
+    pal_ctx.x_data_len  = field_size;
+    py_data_orig = bn_to_crypto_param(py);
+    pal_ctx.y_data = py_data_orig + PCURVES_MAX_PRIME_LEN - field_size;
+    pal_ctx.y_data_len  = field_size;
+    pal_ctx.rdata = malloc(field_size);
+    pal_ctx.sdata = malloc(field_size);
+    pal_ctx.rlen = field_size;
+    pal_ctx.slen = field_size;
     pal_ctx.dgst = dgst;
     pal_ctx.dlen = dgst_len;
     pal_ctx.curve_id = curve_id;
     pal_ecdsa_sigver_init(&pal_ctx);
     pal_ctx.async_cb = provider_ossl_handle_async_job;
 
-    BN_bn2bin(rbn, pal_ctx.rdata);
-    BN_bn2bin(sbn, pal_ctx.sdata);
+    /* Pad r and s with leading zeros to field_size */
+    memset(pal_ctx.rdata, 0, field_size);
+    memset(pal_ctx.sdata, 0, field_size);
+    BN_bn2bin(rbn, pal_ctx.rdata + field_size - BN_num_bytes(rbn));
+    BN_bn2bin(sbn, pal_ctx.sdata + field_size - BN_num_bytes(sbn));
 
     ret = pal_ecdsa_verify(&pal_ctx);
 err:
@@ -315,7 +353,10 @@ err:
         free(pal_ctx.rdata);
     if (pal_ctx.sdata)
         free(pal_ctx.sdata);
-
+    if (px_data_orig)
+        free(px_data_orig);
+    if (py_data_orig)
+        free(py_data_orig);
     return ret;
 }
 

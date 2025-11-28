@@ -22,6 +22,7 @@ int pal_ecdsa_sign(pal_ecdsa_ctx_t *pal_ctx)
 	struct dao_lc_res res;
 	int ret, nb_rx = 0;
 
+	memset(rs_output, 0, sizeof(rs_output));
 	// Initialize completion flags
 	pal_ctx->is_completed = 0;
 	pal_ctx->is_success = 0;
@@ -150,4 +151,9 @@ int pal_ecdsa_ec_point_multiplication(pal_ecdsa_ctx_t *pal_ctx)
 	(void)pal_ctx; /* Unused for now */
 	fprintf(stderr, "pal_ecdsa_ec_point_multiplication: not supported yet\n");
 	return 0;
+}
+
+bool pal_is_ec_point_multiplication_supported()
+{
+	return false;
 }

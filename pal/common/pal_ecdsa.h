@@ -19,6 +19,7 @@ int pal_ecdsa_sign(pal_ecdsa_ctx_t *pal_ctx);
 int pal_ecdh_keygen(EC_KEY *key, int devid, int queue);
 
 int pal_ecdsa_ec_point_multiplication( pal_ecdsa_ctx_t *pal_ctx);
+bool pal_is_ec_point_multiplication_supported();
 
 static inline uint8_t *
 bn_to_crypto_param(const BIGNUM *bn)
@@ -29,8 +30,8 @@ bn_to_crypto_param(const BIGNUM *bn)
 	if (!data)
 		return 0;
 
-	memset(data, 0, PCURVES_MAX_PRIME_LEN);
-	if (BN_bn2bin(bn, data) <= 0) {
+	/* Pad with leading zeros to PCURVES_MAX_PRIME_LEN */
+	if (BN_bn2binpad(bn, data, PCURVES_MAX_PRIME_LEN) < 0) {
 		free(data);
 		return NULL;
 	}

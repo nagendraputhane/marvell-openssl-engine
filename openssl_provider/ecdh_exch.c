@@ -137,7 +137,10 @@ static inline int ecdh_compute_key(unsigned char **pout, size_t *poutlen,
     BIGNUM *py = BN_new();
     pal_ecdsa_ctx_t pal_ctx = {0};
     pal_crypto_curve_id_t curve_id;
-
+    uint8_t *x_buf = NULL;
+    uint8_t *y_buf = NULL;
+    uint8_t *scalar_buf = NULL;
+    int field_size;
     if ((ctx = BN_CTX_new()) == NULL)
         goto err;
 
@@ -178,28 +181,69 @@ static inline int ecdh_compute_key(unsigned char **pout, size_t *poutlen,
         ECerr(EC_F_ECDH_SIMPLE_COMPUTE_KEY, EC_R_INVALID_CURVE);
         goto err;
     }
+    /* Get the curve-specific field size in bytes */
+    field_size = (EC_GROUP_get_degree(group) + 7) / 8;
+    if (!pal_is_ec_point_multiplication_supported())
+    {
+        /* Use software fallback (EC_POINT_mul) */
+        EC_POINT *tmp = EC_POINT_new(group);
+        if (tmp == NULL) {
+            ECerr(EC_F_ECDH_SIMPLE_COMPUTE_KEY, ERR_R_MALLOC_FAILURE);
+            goto err;
+        }
 
-    EC_POINT_get_affine_coordinates_GFp(group, pub_key, px, py, NULL);
+        if (!EC_POINT_mul(group, tmp, NULL, pub_key, priv_key, ctx)) {
+            EC_POINT_free(tmp);
+            ECerr(EC_F_ECDH_COMPUTE_KEY, EC_R_POINT_ARITHMETIC_FAILURE);
+            goto err;
+        }
 
-    pal_ctx.x_data = bn_to_crypto_param(px);
-    pal_ctx.x_data_len  = BN_num_bytes(px);
-    pal_ctx.y_data = bn_to_crypto_param(py);;
-    pal_ctx.y_data_len  = BN_num_bytes(py);
-    pal_ctx.scalar_data = bn_to_crypto_param(priv_key);
-    pal_ctx.scalar_data_len  = BN_num_bytes(priv_key);
-    pal_ctx.rxbuf = rxbuf;
-    pal_ctx.rybuf = rybuf;
-    pal_ctx.curve_id = curve_id;
-    pal_ecdh_init(&pal_ctx);
-    pal_ctx.rxbuf = rxbuf;
-    pal_ctx.rybuf = rybuf;
-    pal_ctx.async_cb = provider_ossl_handle_async_job;
+        if (!EC_POINT_get_affine_coordinates(group, tmp, x, y, ctx)) {
+            EC_POINT_free(tmp);
+            ECerr(EC_F_ECDH_SIMPLE_COMPUTE_KEY, EC_R_POINT_ARITHMETIC_FAILURE);
+            goto err;
+        }
 
-    if ((buflen = pal_ecdsa_ec_point_multiplication(&pal_ctx)) == 0) {
-        ECerr(EC_F_ECDH_COMPUTE_KEY, EC_R_POINT_ARITHMETIC_FAILURE);
-        goto err;
+        EC_POINT_free(tmp);
+
+        /* Pad with leading zeros to field_size */
+        buflen = field_size;
+        if (buflen > PCURVES_MAX_PRIME_LEN) {
+            ECerr(EC_F_ECDH_SIMPLE_COMPUTE_KEY, ERR_R_INTERNAL_ERROR);
+            goto err;
+        }
+
+        memset(rxbuf, 0, buflen);
+        BN_bn2bin(x, (unsigned char *)rxbuf + buflen - BN_num_bytes(x));
     }
+    else {
+        EC_POINT_get_affine_coordinates_GFp(group, pub_key, px, py, NULL);
 
+        x_buf = bn_to_crypto_param(px);
+        y_buf = bn_to_crypto_param(py);
+        scalar_buf = bn_to_crypto_param(priv_key);
+        if (!x_buf || !y_buf || !scalar_buf)
+            goto err;
+
+        pal_ctx.x_data =  x_buf + PCURVES_MAX_PRIME_LEN - field_size;
+        pal_ctx.x_data_len  = field_size;
+        pal_ctx.y_data = y_buf + PCURVES_MAX_PRIME_LEN - field_size;
+        pal_ctx.y_data_len  = field_size;
+        pal_ctx.scalar_data = scalar_buf + PCURVES_MAX_PRIME_LEN - field_size;
+        pal_ctx.scalar_data_len  = field_size;
+        pal_ctx.rxbuf = rxbuf;
+        pal_ctx.rybuf = rybuf;
+        pal_ctx.curve_id = curve_id;
+        pal_ecdh_init(&pal_ctx);
+        pal_ctx.rxbuf = rxbuf;
+        pal_ctx.rybuf = rybuf;
+        pal_ctx.async_cb = provider_ossl_handle_async_job;
+
+        if ((buflen = pal_ecdsa_ec_point_multiplication(&pal_ctx)) == 0) {
+            ECerr(EC_F_ECDH_COMPUTE_KEY, EC_R_POINT_ARITHMETIC_FAILURE);
+            goto err;
+        }
+    }
     *pout = rxbuf;
     *poutlen = buflen;
     rxbuf = NULL;
@@ -211,6 +255,12 @@ err:
         OPENSSL_free(rxbuf);
     if (ctx)
         BN_CTX_end(ctx);
+    if (x_buf)
+        free(x_buf);
+    if (y_buf)
+        free(y_buf);
+    if (scalar_buf)
+        free(scalar_buf);
     BN_CTX_free(ctx);
     BN_free(py);
     BN_free(px);

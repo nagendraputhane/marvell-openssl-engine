@@ -13,6 +13,11 @@
 extern int cpt_num_asym_requests_in_flight;
 extern dpdk_pools_t *pools;
 
+bool pal_is_ec_point_multiplication_supported()
+{
+	return true;
+}
+
 static int ecdsa_sess_create(struct rte_crypto_asym_xform *ecdsa_xform,
 			     struct rte_cryptodev_asym_session **sess, int devid)
 {

@@ -312,99 +312,150 @@ err:
 
 int ecdh_keygen(EC_KEY *eckey)
 {
-  int ok = 0;
-  BIGNUM *rx, *ry;
-  int prime_length;
-  void *rxbuf = NULL;
-  void *rybuf = NULL;
-  const BIGNUM *order;
-  const EC_GROUP *group;
-  BIGNUM *priv_key = NULL;
-  EC_POINT *pub_key = NULL;
-  const EC_POINT *generator;
-  const BIGNUM *const_priv_key;
-  BIGNUM *px = BN_new();
-  BIGNUM *py = BN_new();
-  pal_ecdsa_ctx_t pal_ctx = {0};
-  pal_crypto_curve_id_t curve_id;
+	int ok = 0;
+	BIGNUM *rx = NULL, *ry = NULL;
+	BIGNUM *px = NULL, *py = NULL;
+	int prime_length;
+	void *rxbuf = NULL;
+	void *rybuf = NULL;
+	const BIGNUM *order = NULL;
+	const EC_GROUP *group = NULL;
+	BIGNUM *priv_key = NULL;
+	EC_POINT *pub_key = NULL;
+	const EC_POINT *generator = NULL;
+	const BIGNUM *const_priv_key = NULL;
+	pal_ecdsa_ctx_t pal_ctx = {0};
+	pal_crypto_curve_id_t curve_id;
+	BN_CTX *ctx = NULL;
+	unsigned char *px_data_orig = NULL;
+	unsigned char *py_data_orig = NULL;
+	unsigned char *scalar_data_orig = NULL;
+	int field_size;
+	group = EC_KEY_get0_group((const EC_KEY*)eckey);
+	if (group == NULL)
+		goto err;
 
-  group = EC_KEY_get0_group((const EC_KEY*)eckey);
-  const_priv_key = EC_KEY_get0_private_key((const EC_KEY*)eckey);
-  generator = EC_GROUP_get0_generator(group);
+	generator = EC_GROUP_get0_generator(group);
+	if (generator == NULL)
+		goto err;
 
-  if (const_priv_key == NULL) {
-    priv_key = BN_secure_new();
-    if (priv_key == NULL)
-      goto err;
-  } else
-    priv_key = BN_dup(const_priv_key);
+	const_priv_key = EC_KEY_get0_private_key((const EC_KEY*)eckey);
+	if (const_priv_key == NULL) {
+		priv_key = BN_secure_new();
+	if (priv_key == NULL)
+		goto err;
+	} else {
+		priv_key = BN_dup(const_priv_key);
+		if (priv_key == NULL)
+			goto err;
+	}
 
-  order = EC_GROUP_get0_order(group);
-  if (order == NULL)
-    goto err;
+	order = EC_GROUP_get0_order(group);
+	if (order == NULL)
+		goto err;
 
-  do
-    if (!BN_rand_range(priv_key, order))
-      goto err;
-  while (BN_is_zero(priv_key)) ;
+	do {
+		if (!BN_rand_range(priv_key, order))
+			goto err;
+	} while (BN_is_zero(priv_key));
 
-  pub_key = EC_POINT_new(group);
-  if (pub_key == NULL)
-    goto err;
+	pub_key = EC_POINT_new(group);
+	if (pub_key == NULL)
+		goto err;
 
-  rxbuf = OPENSSL_malloc(PCURVES_MAX_PRIME_LEN);
-  rybuf = OPENSSL_malloc(PCURVES_MAX_PRIME_LEN);
-  if (rxbuf == NULL || rybuf == NULL)
-    goto err;
+	rxbuf = OPENSSL_malloc(PCURVES_MAX_PRIME_LEN);
+	rybuf = OPENSSL_malloc(PCURVES_MAX_PRIME_LEN);
+	if (rxbuf == NULL || rybuf == NULL)
+		goto err;
 
-  memset(rxbuf, 0, PCURVES_MAX_PRIME_LEN);
-  memset(rybuf, 0, PCURVES_MAX_PRIME_LEN);
+	memset(rxbuf, 0, PCURVES_MAX_PRIME_LEN);
+	memset(rybuf, 0, PCURVES_MAX_PRIME_LEN);
 
-  curve_id = get_curve_id(group);
-  if (!curve_id) {
-    ECerr(EC_F_ECDH_SIMPLE_COMPUTE_KEY, EC_R_INVALID_CURVE);
-  }
+	curve_id = get_curve_id(group);
+	if (curve_id < 0) {
+		ECerr(EC_F_ECDH_SIMPLE_COMPUTE_KEY, EC_R_INVALID_CURVE);
+		goto err;
+	}
+	/* Get the fixed field size for the curve in bytes */
+	field_size = (EC_GROUP_get_degree(group) + 7) / 8;
+	if (field_size <= 0)
+		goto err;
 
-  EC_POINT_get_affine_coordinates_GFp(group, generator, px, py, NULL);
+	if (!pal_is_ec_point_multiplication_supported()) {
+		ctx = BN_CTX_new();
+		if (ctx == NULL)
+			goto err;
 
+		if (EC_POINT_mul(group, pub_key, priv_key, NULL, NULL, ctx) != 1) {
+			ECerr(EC_F_PKEY_EC_KEYGEN, EC_R_POINT_ARITHMETIC_FAILURE);
+			goto err;
+		}
+	} else {
 
-  pal_ctx.x_data = bn_to_crypto_param(px);
-  pal_ctx.x_data_len  = BN_num_bytes(px);
-  pal_ctx.y_data = bn_to_crypto_param(py);;
-  pal_ctx.y_data_len  = BN_num_bytes(py);
-  pal_ctx.scalar_data = bn_to_crypto_param(priv_key);
-  pal_ctx.scalar_data_len  = BN_num_bytes(priv_key);
-  pal_ctx.rxbuf = rxbuf;
-  pal_ctx.rybuf = rybuf;
-  pal_ctx.curve_id = curve_id;
-  pal_ecdh_init(&pal_ctx);
-  pal_ctx.rxbuf = rxbuf;
-  pal_ctx.rybuf = rybuf;
-  pal_ctx.async_cb = provider_ossl_handle_async_job;
+	px = BN_new();
+	py = BN_new();
+	if (!px || !py)
+		goto err;
 
-  if ((prime_length = pal_ecdsa_ec_point_multiplication(&pal_ctx)) == 0) {
-    ECerr(EC_F_PKEY_EC_KEYGEN, EC_R_POINT_ARITHMETIC_FAILURE);
-    goto err;
-  }
+	if (!EC_POINT_get_affine_coordinates_GFp(group, generator, px, py, NULL))
+		goto err;
 
-  rx = BN_bin2bn(rxbuf, prime_length, NULL);
-  ry = BN_bin2bn(rybuf, prime_length, NULL);
-  EC_POINT_set_affine_coordinates_GFp(group, pub_key, rx, ry,
-      NULL);
-  EC_KEY_set_private_key(eckey, priv_key);
-  EC_KEY_set_public_key(eckey, pub_key);
-  ok = 1;
+	px_data_orig = bn_to_crypto_param(px);
+	pal_ctx.x_data = px_data_orig + PCURVES_MAX_PRIME_LEN - field_size;
+	py_data_orig = bn_to_crypto_param(py);
+	pal_ctx.y_data = py_data_orig + PCURVES_MAX_PRIME_LEN - field_size;
+	scalar_data_orig = bn_to_crypto_param(priv_key);
+	pal_ctx.scalar_data = scalar_data_orig + PCURVES_MAX_PRIME_LEN - field_size;
+
+	if (!pal_ctx.x_data || !pal_ctx.y_data || !pal_ctx.scalar_data)
+		goto err;
+
+	/* Use fixed length based on curve field size, not variable BN length */
+	pal_ctx.x_data_len = field_size;
+	pal_ctx.y_data_len = field_size;
+	pal_ctx.scalar_data_len = field_size;
+	pal_ctx.rxbuf = rxbuf;
+	pal_ctx.rybuf = rybuf;
+	pal_ctx.curve_id = curve_id;
+	pal_ctx.async_cb = provider_ossl_handle_async_job;
+
+	pal_ecdh_init(&pal_ctx);
+
+	if ((prime_length = pal_ecdsa_ec_point_multiplication(&pal_ctx)) == 0) {
+		ECerr(EC_F_PKEY_EC_KEYGEN, EC_R_POINT_ARITHMETIC_FAILURE);
+		goto err;
+	}
+
+	rx = BN_bin2bn(rxbuf, prime_length, NULL);
+	ry = BN_bin2bn(rybuf, prime_length, NULL);
+	if (!rx || !ry)
+		goto err;
+
+	if (!EC_POINT_set_affine_coordinates_GFp(group, pub_key, rx, ry, NULL))
+		goto err;
+	}
+
+	EC_KEY_set_private_key(eckey, priv_key);
+	EC_KEY_set_public_key(eckey, pub_key);
+	ok = 1;
 
 err:
-  if (rybuf)
-    OPENSSL_free(rybuf);
-  if (rxbuf)
-    OPENSSL_free(rxbuf);
-  if (pub_key)
-    EC_POINT_free(pub_key);
-  if (priv_key)
-    BN_free(priv_key);
-  return ok;
+	OPENSSL_free(rybuf);
+	OPENSSL_free(rxbuf);
+	EC_POINT_free(pub_key);
+	BN_free(priv_key);
+	BN_free(px);
+	BN_free(py);
+	BN_free(rx);
+	BN_free(ry);
+	BN_CTX_free(ctx);
+	if (px_data_orig)
+		free(px_data_orig);
+	if (py_data_orig)
+		free(py_data_orig);
+	if (scalar_data_orig)
+		free(scalar_data_orig);
+	return ok;
 }
 
 static int ec_gen_set_group_from_params(struct ec_gen_ctx *gctx)
