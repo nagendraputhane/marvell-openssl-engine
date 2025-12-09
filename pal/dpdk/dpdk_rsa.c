@@ -191,7 +191,7 @@ int pal_rsa_priv_enc(pal_rsa_ctx_t *pal_ctx, int flen,
 	asym_op->rsa.op_type = RTE_CRYPTO_ASYM_OP_SIGN;
 	asym_op->rsa.message.data = from;
 	asym_op->rsa.message.length = flen;
-	asym_op->rsa.sign.length = flen;
+	asym_op->rsa.sign.length = pal_ctx->rsa_n_len;
 	asym_op->rsa.sign.data = to;
 	if (pal_ctx->padding == PAL_RSA_NO_PADDING)
 #if RTE_VERSION >= RTE_VERSION_NUM(24, 11, 0, 0)
@@ -299,14 +299,34 @@ int pal_rsa_pub_dec(pal_rsa_ctx_t *pal_ctx, int flen,
 	asym_op = cry_op->asym;
 	asym_op->rsa.op_type = RTE_CRYPTO_ASYM_OP_VERIFY;
 
-	/* Octeon PMDs (otx2/cnxk) overwrite decrypted result in rsa.sign.data
-	 * Note: Openssl PMD does not return decrypted result and it is not supported.
+	/* Set output buffer based on padding type:
+	 * - NO_PADDING: Use cipher.data for decrypted output
+	 * - PKCS1_PADDING:
+	 *   Octeon PMDs (otx2/cnxk) overwrite decrypted result in rsa.sign.data
+	 *   Note: Openssl PMD does not return decrypted result and it is not supported.
 	 */
-	if (to != from)
-		memcpy(to, from, flen);
-	asym_op->rsa.sign.data = to;
-	asym_op->rsa.sign.length = flen;
+	if (pal_ctx->padding == PAL_RSA_NO_PADDING) {
+		/* NO_PADDING: Decrypted output goes to cipher.data */
+#if RTE_VERSION >= RTE_VERSION_NUM(24, 11, 0, 0)
+		asym_op->rsa.sign.data = from;
+		asym_op->rsa.sign.length = flen;
+		asym_op->rsa.cipher.data = to;
+		asym_op->rsa.cipher.length = pal_ctx->rsa_n_len;
+#else
+		/* Older DPDK: Overwrites sign.data with decrypted output */
+		if (to != from)
+			memcpy(to, from, flen);
+		asym_op->rsa.sign.data = to;
+		asym_op->rsa.sign.length = flen;
+#endif
+	} else if (pal_ctx->padding == PAL_RSA_PKCS1_PADDING) {
+		if (to != from)
+			memcpy(to, from, flen);
+		asym_op->rsa.sign.data = to;
+		asym_op->rsa.sign.length = flen;
+	}
 
+	/* Set padding type */
 	if (pal_ctx->padding == PAL_RSA_NO_PADDING)
 #if RTE_VERSION >= RTE_VERSION_NUM(24, 11, 0, 0)
 		;
@@ -327,9 +347,180 @@ int pal_rsa_pub_dec(pal_rsa_ctx_t *pal_ctx, int flen,
 	/* Enqueue and Dequeue operations */
 	if (unlikely(queue_ops(cry_op, pal_ctx) < 0))
 		ret = -1;
-	else
-		ret = asym_op->rsa.sign.length;
+	else {
+		/* Return length based on padding type */
+		if (pal_ctx->padding == PAL_RSA_NO_PADDING) {
+#if RTE_VERSION >= RTE_VERSION_NUM(24, 11, 0, 0)
+			ret = asym_op->rsa.cipher.length;
+#else
+			ret = asym_op->rsa.sign.length;
+#endif
+		} else {
+			ret = asym_op->rsa.sign.length;
+		}
+	}
 
+	asym_sess_destroy(sess, pal_ctx->dev_id);
+	rte_crypto_op_free(cry_op);
+
+	return ret;
+}
+
+/*
+ * API Description: High-level RSA Sign API
+ * Directly calls pal_rsa_priv_enc for signing operations
+ *
+ * pal_rsa_ctx_t *pal_ctx: RSA context
+ * int flen: Length of message to sign
+ * const unsigned char *from: Message data
+ * unsigned char *to: Output signature buffer
+ * size_t *to_len: Output signature length
+ *
+ * Returns: 1 on success, 0 on failure
+ */
+int pal_rsa_sign(pal_rsa_ctx_t *pal_ctx, int flen, const unsigned char *from,
+                 unsigned char *to, size_t *to_len)
+{
+	int ret;
+	/* Call private encrypt for signing - no checks */
+	ret = pal_rsa_priv_enc(pal_ctx, flen, from, to);
+
+	if (ret <= 0) {
+		return 0;
+	}
+
+	*to_len = ret;
+	return 1;
+}
+
+/*
+ * API Description: High-level RSA Verify API
+ *
+ * Behavior is determined by padding type:
+ *
+ * PAL_RSA_PKCS1_PADDING: Creates xform directly, driver compares
+ *   - Sets sign.data and message.data
+ *   - Driver performs comparison internally
+ *   - Returns: 1 on success (verified), 0 on failure
+ *
+ * PAL_RSA_NO_PADDING: Calls pal_rsa_pub_dec to decrypt signature
+ *   - Decrypts signature to msg buffer (output parameter)
+ *   - Returns decrypted output for further processing (e.g., PSS verification)
+ *   - Returns: decrypted length on success, 0 on failure
+ *
+ * pal_rsa_ctx_t *pal_ctx: RSA context (padding field determines behavior)
+ * int signlen: Length of signature
+ * const unsigned char *sign: Signature data
+ * const unsigned char *msg: For PKCS1: message to compare; For NO_PADDING: output buffer
+ * int msglen: For PKCS1: message length; For NO_PADDING: buffer size (unused)
+ *
+ * Returns:
+ *   - PAL_RSA_PKCS1_PADDING: 1 on success (verified), 0 on failure
+ *   - PAL_RSA_NO_PADDING: decrypted length on success, 0 on failure
+ */
+int pal_rsa_verify(pal_rsa_ctx_t *pal_ctx, int signlen, const unsigned char *sign,
+                   const unsigned char *msg, int msglen)
+{
+	struct rte_crypto_asym_xform *rsa_xform = NULL;
+	struct rte_cryptodev_asym_session *sess = NULL;
+	struct rte_crypto_asym_op *asym_op = NULL;
+	struct rte_crypto_op *cry_op = NULL;
+	uint32_t op_size = 0;
+	int ret = 0;
+	unsigned char sign_buf[signlen];
+
+	/* Path 1: NO_PADDING - Decrypt to msg buffer, return length */
+	if (pal_ctx->padding == PAL_RSA_NO_PADDING) {
+		ret = pal_rsa_pub_dec(pal_ctx, signlen, sign, (unsigned char *)msg);
+
+		if (ret <= 0) {
+			return 0;
+		}
+		return ret;  /* Return decrypted length */
+	}
+
+	/* Path 2: PKCS1_PADDING - Create xform directly for driver comparison */
+	if (!asym_get_valid_devid_qid(&pal_ctx->dev_id, &pal_ctx->qp_id))
+		return 0;
+
+	/* Generate Crypto op data structure */
+	cry_op = rte_crypto_op_alloc(pools->asym_op_pool,
+				     RTE_CRYPTO_OP_TYPE_ASYMMETRIC);
+	if (unlikely(cry_op == NULL)) {
+		engine_log(ENG_LOG_ERR, "line %u FAILED: %s", __LINE__,
+			"Failed to allocate asymmetric crypto operation struct");
+		return 0;
+	}
+
+	op_size = __rte_crypto_op_get_priv_data_size(pools->asym_op_pool);
+	rsa_xform = __rte_crypto_op_get_priv_data(cry_op, op_size);
+
+	/* Setup public xform operations */
+	setup_non_crt_pub_op_xform(rsa_xform, pal_ctx);
+
+#if RTE_VERSION >= RTE_VERSION_NUM(24, 11, 0, 0)
+	if (pal_ctx->padding == PAL_RSA_NO_PADDING)
+		rsa_xform->rsa.padding.type = RTE_CRYPTO_RSA_PADDING_NONE;
+	else
+		rsa_xform->rsa.padding.type = RTE_CRYPTO_RSA_PADDING_PKCS1_5;
+#endif
+
+	/* Session Configuration */
+	ret = asym_sess_create(rsa_xform, &sess, pal_ctx->dev_id);
+	if (unlikely(ret < 0)) {
+		rte_crypto_op_free(cry_op);
+		return 0;
+	}
+
+	/* Attach asymmetric crypto session to crypto operations */
+	rte_crypto_op_attach_asym_session(cry_op, sess);
+
+	asym_op = cry_op->asym;
+	asym_op->rsa.op_type = RTE_CRYPTO_ASYM_OP_VERIFY;
+
+	/* Set signature data */
+#if RTE_VERSION >= RTE_VERSION_NUM(24, 11, 0, 0)
+	asym_op->rsa.sign.data = (uint8_t *)sign;
+#else
+	memcpy(sign_buf, sign, signlen);
+	asym_op->rsa.sign.data = (uint8_t *)sign_buf;
+#endif
+	asym_op->rsa.sign.length = signlen;
+
+	/* For driver comparison path: Set message buffer for PKCS1 */
+	asym_op->rsa.message.data = (uint8_t *)msg;
+	asym_op->rsa.message.length = msglen;
+
+	/* Set padding type */
+	if (pal_ctx->padding == PAL_RSA_NO_PADDING)
+#if RTE_VERSION >= RTE_VERSION_NUM(24, 11, 0, 0)
+		;
+#elif RTE_VERSION >= RTE_VERSION_NUM(22, 11, 0, 99)
+		asym_op->rsa.padding.type = RTE_CRYPTO_RSA_PADDING_NONE;
+#else
+		asym_op->rsa.pad = RTE_CRYPTO_RSA_PADDING_NONE;
+#endif
+	else if (pal_ctx->padding == PAL_RSA_PKCS1_PADDING)
+#if RTE_VERSION >= RTE_VERSION_NUM(24, 11, 0, 0)
+		;
+#elif RTE_VERSION >= RTE_VERSION_NUM(22, 11, 0, 99)
+		asym_op->rsa.padding.type = RTE_CRYPTO_RSA_PADDING_PKCS1_5;
+#else
+		asym_op->rsa.pad = RTE_CRYPTO_RSA_PADDING_PKCS1_5;
+#endif
+
+	/* Enqueue and Dequeue operations */
+	if (unlikely(queue_ops(cry_op, pal_ctx) < 0)) {
+		ret = 0;
+		goto cleanup;
+	}
+
+	/* Driver comparison path - PKCS1 only
+	 * If operation succeeded, comparison passed
+	 */
+	ret = 1;
+
+cleanup:
 	asym_sess_destroy(sess, pal_ctx->dev_id);
 	rte_crypto_op_free(cry_op);
 

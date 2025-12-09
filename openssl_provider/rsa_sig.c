@@ -575,20 +575,18 @@ static inline int rsa_sign(const unsigned char *from, int flen,
     else
 	rsa_xform_non_crt_setup(ctx->key, &pal_ctx);
 
-
-    ret = pal_rsa_priv_enc(&pal_ctx, flen, from, to);
-
-    *to_len = ret;
-
+    /* Use pal_rsa_sign API */
+    ret = pal_rsa_sign(&pal_ctx, flen, from, to, to_len);
     return ret;
 }
 
 static inline int
-rsa_verify_sw(unsigned char * decrypt_buf, const unsigned char *sign,
-        int signlen, PROV_RSA_CTX * ctx)
+rsa_verify_sw(unsigned char * msg, int msglen, const unsigned char *sig,
+        int siglen, PROV_RSA_CTX * ctx)
 {
     int ret = 0;
     int padding;
+    unsigned char decrypt_buf[siglen];
 
     /* Map padding type to OpenSSL constants */
     switch (ctx->pad_type) {
@@ -606,52 +604,19 @@ rsa_verify_sw(unsigned char * decrypt_buf, const unsigned char *sign,
             return -1;
     }
 
-    ret = RSA_public_decrypt(signlen, sign, decrypt_buf, ctx->sw_rsa, padding);
+    ret = RSA_public_decrypt(siglen, sig, decrypt_buf, ctx->sw_rsa, padding);
     if (ret < 0) {
         fprintf(stderr, "%s: RSA_public_decrypt failed\n", __func__);
         ERR_print_errors_fp(stderr);
         return -1;
     }
-
-    return ret;
-}
-
-static inline int
-rsa_verify( unsigned char * decrypt_buf, const unsigned char *sign,
-        int signlen, PROV_RSA_CTX * ctx)
-{
-    /* Use software fallback if needed */
-    if (unlikely(ctx->use_sw_fallback)) {
-        return rsa_verify_sw(decrypt_buf, sign, signlen, ctx);
-    }
-
-    int ret = 0, priv_sz;
-    pal_rsa_ctx_t pal_ctx = {0};
-
-    pal_ctx.padding = ctx->pad_type;
-
-    /* PSS mode is not supported in HW at this point of time.
-     * we build the PSS-encoded block in SW and pass it to PAL with padding set to NONE (zero) */
-    if (pal_ctx.padding == RSA_PKCS1_PSS_PADDING)
-    {
-        pal_ctx.padding = PAL_RSA_NO_PADDING;
-    }
-    pal_ctx.async_cb = provider_ossl_handle_async_job;
-
-    rsa_xform_non_crt_setup(ctx->key, &pal_ctx);
-
-    ret = pal_rsa_pub_dec(&pal_ctx, signlen, sign, decrypt_buf);
-
-    if( ret < 0)
-    {
-        fprintf(stderr,"%s: pal_rsa_pub_dec failed\n",__func__);
+    if (ret != msglen || memcmp(msg, decrypt_buf, msglen) != 0) {
+        fprintf(stderr, "%s: RSA signature verification failed\n", __func__);
         return -1;
     }
 
     return ret;
-
 }
-
 
 static int prov_rsa_sign(void *vctx, unsigned char *sig, size_t *siglen,
         size_t sigsize, const unsigned char *tbs,
@@ -800,20 +765,39 @@ static int prov_rsa_verify(void *vctx, const unsigned char *sig,
         size_t tbslen)
 {
     PROV_RSA_CTX *prsactx = (PROV_RSA_CTX *) vctx;
-    unsigned char decrypt_buf[siglen];
+
+    /* Use software fallback if needed */
+    if (unlikely(prsactx->use_sw_fallback)) {
+        return rsa_verify_sw(tbs, tbslen, sig, siglen, prsactx);
+    }
+
     int ret = 0;
+    pal_rsa_ctx_t pal_ctx = {0};
 
     if (!prov_is_running())
         return 0;
 
-    ret = rsa_verify(decrypt_buf, sig, siglen, prsactx);
+    pal_ctx.padding = prsactx->pad_type;
 
-    if ( memcmp(decrypt_buf, tbs, tbslen) || (ret <= 0) ) {
-        fprintf(stderr, "compare failed\n");
+    /* PSS mode is not supported in HW at this point of time.
+     * we build the PSS-encoded block in SW and pass it to PAL with padding set to NONE (zero) */
+    if (prsactx->pad_type == RSA_PKCS1_PSS_PADDING)
+    {
+        pal_ctx.padding = PAL_RSA_NO_PADDING;
+    }
+    pal_ctx.async_cb = provider_ossl_handle_async_job;
+
+    rsa_xform_non_crt_setup(prsactx->key, &pal_ctx);
+
+    /* pal_rsa_verify handles both PKCS1 and NO_PADDING internally */
+    ret = pal_rsa_verify(&pal_ctx, siglen, sig, tbs, tbslen);
+
+    if (ret <= 0) {
+        fprintf(stderr,"%s: pal_rsa_verify failed\n",__func__);
         return 0;
     }
 
-    return 1;
+    return ret;
 }
 
 static void rsa_freectx(void *vctx)
@@ -1144,39 +1128,31 @@ static int rsa_digest_verify_final(void *vprsactx,
     }
 
     switch (prsactx->pad_type) {
-        case PAL_RSA_NO_PADDING:
         case PAL_RSA_PKCS1_PADDING:
             {
-                ret = rsa_verify(decrypt_buf, sig, siglen, vprsactx);
-                decrypt_len = ret;
+                int mdnid = EVP_MD_type(prsactx->md);
 
-                if ((ret < 0) || ((size_t) digest_len > decrypt_len)) {
-                    fprintf(stderr,
-                        "%s:%d:%s(): Error in decrypting the sign (or) mdlen %zu >  dlen %zu\n",
-                        __FILE__, __LINE__, __func__,(size_t) digest_len, decrypt_len);
-                    return 0;
-                }
-
-                /*
-                * If recovering the digest, extract a digest-sized output from the end
-                * of |decrypt_buf| for |encode_pkcs1|, then compare the decryption
-                * output as in a standard verification.
-                */
-                tmp = decrypt_buf + decrypt_len - digest_len;
-
-                if (unlikely
-                    (!encode_pkcs1
-                    (&encoded, &encoded_len, EVP_MD_type(prsactx->md), tmp,
-                    digest_len))) {
-                        fprintf(stderr, "%s:%d:%s(): Error in encode_pkcs1\n", __FILE__,
-                            __LINE__, __func__);
+                if (mdnid == NID_md5_sha1) {
+                    if (digest_len != SSL_SIG_LENGTH) {
+                        ERR_raise(ERR_LIB_RSA, RSA_R_INVALID_MESSAGE_LENGTH);
                         goto err;
                     }
 
-                if (encoded_len != decrypt_len
-                    || memcmp(encoded, decrypt_buf, encoded_len) != 0) {
-                        fprintf(stderr, "%s:%d:%s(): Digest verification NOT OK\n",
-                            __FILE__, __LINE__, __func__);
+                    ret = prov_rsa_verify(vprsactx, sig, siglen, digest_buf, digest_len);
+                } else {
+                    /* PKCS1: Encode digest and pass to pal_rsa_verify for driver comparison */
+                    if (!encode_pkcs1(&encoded, &encoded_len, mdnid,
+                                     digest_buf, digest_len)) {
+                        fprintf(stderr, "%s:%d:%s(): Error in encode_pkcs1\n",
+                               __FILE__, __LINE__, __func__);
+                        goto err;
+                    }
+                    ret = prov_rsa_verify(vprsactx, sig, siglen, encoded, encoded_len);
+                }
+
+                if (ret <= 0) {
+                    fprintf(stderr, "%s:%d:%s(): RSA verify failed\n",
+                           __FILE__, __LINE__, __func__);
                     goto err;
                 }
 
@@ -1185,7 +1161,7 @@ static int rsa_digest_verify_final(void *vprsactx,
             break;
 
         case RSA_PKCS1_PSS_PADDING:
-            {
+        {
                 size_t mdsize;
 
                 /*
@@ -1202,11 +1178,13 @@ static int rsa_digest_verify_final(void *vprsactx,
 
                 if (!setup_tbuf(prsactx))
                     return 0;
-                ret = rsa_verify(prsactx->tbuf, sig, siglen, prsactx);
+                ret = prov_rsa_verify(vprsactx, sig, siglen, prsactx->tbuf, prsactx->key->n_len);
                 if (ret <= 0) {
                     ERR_raise(ERR_LIB_PROV, ERR_R_RSA_LIB);
                     return 0;
                 }
+
+                /* Now do PSS verification on the decrypted EM */
                 ret = prov_rsa_verify_PKCS1_PSS_mgf1(prsactx->key, digest_buf,
                                                 prsactx->md, prsactx->mgf1_md,
                                                 prsactx->tbuf,
@@ -1219,7 +1197,7 @@ static int rsa_digest_verify_final(void *vprsactx,
             }
         default:
             ERR_raise_data(ERR_LIB_PROV, PROV_R_INVALID_PADDING_MODE,
-                           "Only X.931, PKCS#1 v1.5 or PSS padding allowed");
+                           "Only PKCS#1 v1.5 or PSS padding allowed");
             return 0;
         }
 err:

@@ -22,7 +22,7 @@ $(error "Please define DAO_LC_INSTALL path")
 endif
 endif
 
-ifneq ($(PAL),lc)
+ifeq ($(BUILD_TYPE),cross)
 DPDK_PC?=$(DPDK_INSTALL)/usr/local/lib/pkgconfig/
 else
 DPDK_PC?=$(firstword $(wildcard $(DPDK_INSTALL)/lib64/pkgconfig) \

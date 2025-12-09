@@ -108,6 +108,40 @@ while (i < OTX2_NUM_ARGS) {
 	*argc_out = i;
 	return 0;
 }
+static inline int build_eal_params_for_virtio_pmd(char ***argv_out, int *argc_out)
+{
+	char idstr[10], cpu[3] = {0};
+
+	snprintf(idstr, sizeof(idstr), "rte%d", getpid());
+	snprintf(cpu, sizeof(cpu), "%2d", sched_getcpu());
+
+	char **argv = malloc(12 * sizeof(char *));
+	if (!argv) {
+		fprintf(stderr, "Failed to allocate memory for argv\n");
+		return -1;
+	}
+
+	fprintf(stderr, "Using crypto_virtio_user\n");
+
+	int i = 0;
+	argv[i++] = strdup("DPDK");
+	argv[i++] = strdup("--proc-type");
+	argv[i++] = strdup("auto");
+	argv[i++] = strdup("--file-prefix");
+	argv[i++] = strdup(idstr);
+	argv[i++] = strdup("--no-pci");
+	argv[i++] = strdup("--vdev=crypto_virtio_user0,path=/dev/vhost-vdpa-0,queue_size=1024");
+	argv[i++] = strdup("--socket-mem=500"); /* 500MB per process */
+	argv[i++] = strdup("-l");
+	argv[i++] = strdup(cpu);
+	argv[i++] = strdup("-d");
+	argv[i++] = strdup("librte_mempool_ring.so");
+
+	*argv_out = argv;
+	*argc_out = i;
+
+	return 0;
+}
 static inline int cpt_hw_init(void)
 {
 	uint64_t feature_flags = 0;
@@ -119,7 +153,11 @@ static inline int cpt_hw_init(void)
 	{
 		build_eal_params_for_ossl_pmd(&argv, &argc);
 	}
-	else{
+	else if (crypto_name && strcmp(crypto_name, "crypto_virtio_user") == 0 )
+	{
+		build_eal_params_for_virtio_pmd(&argv, &argc);
+	}
+	else {
 		build_eal_params_for_cnxk_pmd(&argv, &argc);
 	}
 

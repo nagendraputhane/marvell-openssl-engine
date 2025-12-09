@@ -5,6 +5,7 @@
 
 #define _GNU_SOURCE
 #include <errno.h>
+#include <string.h>
 #include <rte_cycles.h>
 #include <rte_random.h>
 #include <dao_liquid_crypto.h>
@@ -249,4 +250,60 @@ int pal_rsa_priv_dec(pal_rsa_ctx_t *pal_ctx, int flen,const unsigned char *from,
 	}
 
 	return -1;
+}
+
+/*
+ * High-level RSA Sign API for LC
+ */
+int pal_rsa_sign(pal_rsa_ctx_t *pal_ctx, int flen, const unsigned char *from,
+                 unsigned char *to, size_t *to_len)
+{
+	int ret;
+	ret = pal_rsa_priv_enc(pal_ctx, flen, from, to);
+
+	if (ret <= 0) {
+		return 0;
+	}
+
+	*to_len = ret;
+	return 1;
+}
+
+/*
+ * High-level RSA Verify API for LC
+ * Note: LC always uses pal_rsa_pub_dec regardless of padding type
+ *
+ * For PKCS1_PADDING: Decrypt and compare with msg, return 1/0
+ * For NO_PADDING: Just decrypt to msg buffer, return length
+ */
+int pal_rsa_verify(pal_rsa_ctx_t *pal_ctx, int signlen, const unsigned char *sign,
+                   const unsigned char *msg, int msglen)
+{
+	unsigned char decrypt_buf[signlen];
+	int ret;
+
+	if (pal_ctx->padding == PAL_RSA_PKCS1_PADDING) {
+		/* PKCS1: Decrypt and compare */
+		ret = pal_rsa_pub_dec(pal_ctx, signlen, sign, decrypt_buf);
+
+		if (ret <= 0) {
+			return 0;
+		}
+
+		if (ret != msglen || memcmp(decrypt_buf, msg, msglen) != 0) {
+			return 0;
+		}
+
+		return 1;  /* Success */
+
+	} else {
+		/* NO_PADDING: Decrypt to caller's buffer, return length */
+		ret = pal_rsa_pub_dec(pal_ctx, signlen, sign, (unsigned char *)msg);
+
+		if (ret <= 0) {
+			return 0;
+		}
+
+		return ret;  /* Return decrypted length */
+	}
 }
