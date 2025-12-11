@@ -13,6 +13,7 @@
 #include <openssl/proverr.h>
 #include <openssl/rsa.h>	// RSA_*_PADDING macro declarations
 #include <openssl/rand.h>
+#include <openssl/bn.h>
 #include "pal.h"
 #include "pal_rsa.h"
 #include "defs.h"
@@ -82,6 +83,10 @@ typedef struct {
     /* Minimum salt length or -1 if no PSS parameter restriction */
     int min_saltlen;
     unsigned char *tbuf;
+    /* Flag to indicate software fallback for unsupported key sizes */
+    int use_sw_fallback;
+    /* Software RSA key for fallback */
+    RSA *sw_rsa;
 } PROV_RSA_CTX;
 
 static inline int prov_rsa_check_modlen(prov_rsa_key_data * key)
@@ -138,6 +143,8 @@ static void *rsa_newctx(void *provctx, const char *propq)
     /* Maximum up to digest length for sign, auto for verify */
     prsactx->saltlen = RSA_PSS_SALTLEN_AUTO_DIGEST_MAX;
     prsactx->min_saltlen = -1;
+    prsactx->use_sw_fallback = 0;
+    prsactx->sw_rsa = NULL;
     return prsactx;
 }
 
@@ -160,6 +167,7 @@ static void *rsa_dupctx(void *vprsactx)
     dstctx->mgf1_md = NULL;
     dstctx->propq = NULL;
     dstctx->tbuf = NULL;
+    dstctx->sw_rsa = NULL;
 
     if (srcctx->key != NULL) {
         (void) PROV_ATOMIC_INC(srcctx->key->refcnt);
@@ -189,6 +197,11 @@ static void *rsa_dupctx(void *vprsactx)
         dstctx->propq = OPENSSL_strdup(srcctx->propq);
         if (dstctx->propq == NULL)
             goto err;
+    }
+
+    if (srcctx->sw_rsa != NULL) {
+        RSA_up_ref(srcctx->sw_rsa);
+        dstctx->sw_rsa = srcctx->sw_rsa;
     }
 
     return dstctx;
@@ -315,6 +328,81 @@ int prov_padding_add_PKCS1_PSS_mgf1(prov_rsa_key_data *rsa, unsigned char *EM,
 
 }
 
+static RSA *prov_rsa_key_to_openssl_rsa(prov_rsa_key_data *key)
+{
+    RSA *rsa = NULL;
+    BIGNUM *n = NULL, *e = NULL, *d = NULL;
+    BIGNUM *p = NULL, *q = NULL, *dmp1 = NULL, *dmq1 = NULL, *iqmp = NULL;
+
+    rsa = RSA_new();
+    if (rsa == NULL)
+        return NULL;
+
+    /* Set public key components */
+    n = BN_bin2bn(key->n_data, key->n_len, NULL);
+    e = BN_bin2bn(key->e_data, key->e_len, NULL);
+    if (n == NULL || e == NULL)
+        goto err;
+
+    if (!RSA_set0_key(rsa, n, e, NULL)) {
+        goto err;
+    }
+    n = NULL;
+    e = NULL;
+
+    /* Set private key components if available */
+    if (key->d_data != NULL && key->d_len > 0) {
+        d = BN_bin2bn(key->d_data, key->d_len, NULL);
+        if (d == NULL)
+            goto err;
+        if (!RSA_set0_key(rsa, NULL, NULL, d)) {
+            goto err;
+        }
+        d = NULL;
+    }
+
+    /* Set CRT parameters: p/q implied by use_crt; check dP/dQ/qInv */
+    if (key->use_crt &&
+        key->qt_dP_data != NULL && key->qt_dQ_data != NULL &&
+        key->qt_qInv_data != NULL) {
+        p = BN_bin2bn(key->qt_p_data, key->qt_p_len, NULL);
+        q = BN_bin2bn(key->qt_q_data, key->qt_q_len, NULL);
+        dmp1 = BN_bin2bn(key->qt_dP_data, key->qt_dP_len, NULL);
+        dmq1 = BN_bin2bn(key->qt_dQ_data, key->qt_dQ_len, NULL);
+        iqmp = BN_bin2bn(key->qt_qInv_data, key->qt_qInv_len, NULL);
+
+        if (p == NULL || q == NULL || dmp1 == NULL || dmq1 == NULL || iqmp == NULL)
+            goto err;
+
+        if (!RSA_set0_factors(rsa, p, q)) {
+            goto err;
+        }
+        p = NULL;
+        q = NULL;
+
+        if (!RSA_set0_crt_params(rsa, dmp1, dmq1, iqmp)) {
+            goto err;
+        }
+        dmp1 = NULL;
+        dmq1 = NULL;
+        iqmp = NULL;
+    }
+
+    return rsa;
+
+err:
+    RSA_free(rsa);
+    BN_free(n);
+    BN_free(e);
+    BN_free(d);
+    BN_free(p);
+    BN_free(q);
+    BN_free(dmp1);
+    BN_free(dmq1);
+    BN_free(iqmp);
+    return NULL;
+}
+
 static inline int
 rsa_signverify_init(void *vctx, void *provkey,
         const OSSL_PARAM params[], int operation)
@@ -335,9 +423,23 @@ rsa_signverify_init(void *vctx, void *provkey,
         prsactx->key = provkey;
     }
 
+    /* Check if hardware supports this modulus length */
     if (unlikely(prov_rsa_check_modlen(prsactx->key) != 0)) {
-        fprintf(stderr, "Mod length %u not in supported range\n", prsactx->key->n_len);
-        return -1;
+        prsactx->use_sw_fallback = 1;
+
+        /* Create OpenSSL RSA key for software fallback */
+        if (prsactx->sw_rsa != NULL) {
+            RSA_free(prsactx->sw_rsa);
+            prsactx->sw_rsa = NULL;
+        }
+
+        prsactx->sw_rsa = prov_rsa_key_to_openssl_rsa(prsactx->key);
+        if (prsactx->sw_rsa == NULL) {
+            fprintf(stderr, "%s:%d:%s(): Failed to create software RSA key\n",__FILE__, __LINE__, __func__);
+            return 0;
+        }
+    } else {
+        prsactx->use_sw_fallback = 0;
     }
 
     prsactx->operation = operation;
@@ -414,9 +516,47 @@ rsa_xform_non_crt_setup(const prov_rsa_key_data * key, pal_rsa_ctx_t *pal_ctx)
 
 }
 
+static inline int rsa_sign_sw(const unsigned char *from, int flen,
+        unsigned char *to, size_t *to_len, PROV_RSA_CTX * ctx)
+{
+    int ret = 0;
+    int padding;
+
+    /* Map padding type to OpenSSL constants */
+    switch (ctx->pad_type) {
+        case RTE_CRYPTO_RSA_PADDING_PKCS1_5:
+            padding = RSA_PKCS1_PADDING;
+            break;
+        case RTE_CRYPTO_RSA_PADDING_NONE:
+            padding = RSA_NO_PADDING;
+            break;
+        case RSA_PKCS1_PSS_PADDING:
+            padding = RSA_NO_PADDING; /* PSS encoding already done */
+            break;
+        default:
+            fprintf(stderr, "%s: Unsupported padding mode %d\n", __func__, ctx->pad_type);
+            return -1;
+    }
+
+    ret = RSA_private_encrypt(flen, from, to, ctx->sw_rsa, padding);
+    if (ret < 0) {
+        fprintf(stderr, "%s: RSA_private_encrypt failed\n", __func__);
+        ERR_print_errors_fp(stderr);
+        return -1;
+    }
+
+    *to_len = ret;
+    return ret;
+}
+
 static inline int rsa_sign(const unsigned char *from, int flen,
         unsigned char *to, size_t *to_len, PROV_RSA_CTX * ctx)
 {
+    /* Use software fallback if needed */
+    if (unlikely(ctx->use_sw_fallback)) {
+        return rsa_sign_sw(from, flen, to, to_len, ctx);
+    }
+
     int ret = 0, priv_sz;
     pal_rsa_ctx_t pal_ctx = {0};
 
@@ -444,9 +584,46 @@ static inline int rsa_sign(const unsigned char *from, int flen,
 }
 
 static inline int
+rsa_verify_sw(unsigned char * decrypt_buf, const unsigned char *sign,
+        int signlen, PROV_RSA_CTX * ctx)
+{
+    int ret = 0;
+    int padding;
+
+    /* Map padding type to OpenSSL constants */
+    switch (ctx->pad_type) {
+        case RTE_CRYPTO_RSA_PADDING_PKCS1_5:
+            padding = RSA_PKCS1_PADDING;
+            break;
+        case RTE_CRYPTO_RSA_PADDING_NONE:
+            padding = RSA_NO_PADDING;
+            break;
+        case RSA_PKCS1_PSS_PADDING:
+            padding = RSA_NO_PADDING; /* PSS encoding already done */
+            break;
+        default:
+            fprintf(stderr, "%s: Unsupported padding mode %d\n", __func__, ctx->pad_type);
+            return -1;
+    }
+
+    ret = RSA_public_decrypt(signlen, sign, decrypt_buf, ctx->sw_rsa, padding);
+    if (ret < 0) {
+        fprintf(stderr, "%s: RSA_public_decrypt failed\n", __func__);
+        ERR_print_errors_fp(stderr);
+        return -1;
+    }
+
+    return ret;
+}
+
+static inline int
 rsa_verify( unsigned char * decrypt_buf, const unsigned char *sign,
         int signlen, PROV_RSA_CTX * ctx)
 {
+    /* Use software fallback if needed */
+    if (unlikely(ctx->use_sw_fallback)) {
+        return rsa_verify_sw(decrypt_buf, sign, signlen, ctx);
+    }
 
     int ret = 0, priv_sz;
     pal_rsa_ctx_t pal_ctx = {0};
@@ -652,6 +829,7 @@ static void rsa_freectx(void *vctx)
     EVP_MD_free(prsactx->mgf1_md);
     OPENSSL_free(prsactx->propq);
     free_tbuf(prsactx);
+    RSA_free(prsactx->sw_rsa);
     OPENSSL_clear_free(prsactx, sizeof(*prsactx));
 
     return;

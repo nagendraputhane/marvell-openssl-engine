@@ -17,6 +17,14 @@ extern  int cpt_num_asym_requests_in_flight ;
 
 int pal_rsa_capability_check_modlen(int16_t modlen)
 {
+	if (modlen < LIQUID_CRYPTO_RSA_MOD_LEN_MIN ) {
+		ossl_log(OSSL_LOG_INFO, "RSA modulus length %d is below minimum supported %d\n", modlen, LIQUID_CRYPTO_RSA_MOD_LEN_MIN);
+		return -1;
+	}
+	if (modlen > LIQUID_CRYPTO_RSA_MOD_LEN_MAX) {
+		ossl_log(OSSL_LOG_INFO, "RSA modulus length %d exceeds maximum supported %d\n", modlen, LIQUID_CRYPTO_RSA_MOD_LEN_MAX);
+		return -1;
+	}
 	return 0;
 }
 
