@@ -848,6 +848,7 @@ int key_to_params(const EC_KEY *eckey, OSSL_PARAM_BLD *tmpl,
     int ret = 0;
     BN_CTX *bnctx = NULL;
     OSSL_LIB_CTX *libctx = OSSL_LIB_CTX_new();
+    EVP_PKEY_CTX *pctx = NULL;
     if (eckey == NULL
         || (ecg = EC_KEY_get0_group(eckey)) == NULL)
         return 0;
@@ -861,7 +862,7 @@ int key_to_params(const EC_KEY *eckey, OSSL_PARAM_BLD *tmpl,
          * EC_POINT_point2buf() can generate random numbers in some
          * implementations so we need to ensure we use the correct libctx.
          */
-	EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_from_name(libctx, "EC", NULL);
+	pctx = EVP_PKEY_CTX_new_from_name(libctx, "EC", NULL);
 
         bnctx = BN_CTX_new_ex(libctx);
         if (bnctx == NULL)
@@ -929,6 +930,7 @@ int key_to_params(const EC_KEY *eckey, OSSL_PARAM_BLD *tmpl,
     ret = 1;
  err:
     BN_CTX_free(bnctx);
+    EVP_PKEY_CTX_free(pctx);
     return ret;
 }
 static int ec_get_ecm_params(const EC_GROUP *group, OSSL_PARAM params[])
@@ -1253,6 +1255,7 @@ err:
     OPENSSL_free(pub_key);
     BN_CTX_end(bnctx);
     BN_CTX_free(bnctx);
+    EVP_PKEY_CTX_free(pctx);
     return ret;
 }
 
