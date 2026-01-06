@@ -466,56 +466,6 @@ static int rsa_verify_init(void *vctx, void *vrsa,
             PROV_RSA_OP_VERIFY);
 }
 
-
-static inline void
-rsa_xform_crt_setup(const prov_rsa_key_data * key, pal_rsa_ctx_t *pal_ctx)
-{
-
-    pal_ctx->rsa_n_data = key->n_data;
-    pal_ctx->rsa_n_len = key->n_len;
-
-    pal_ctx->rsa_e_data = key->e_data;
-    pal_ctx->rsa_e_len = key->e_len;
-
-    pal_ctx->rsa_qt_p_data = key->qt_p_data;
-    pal_ctx->rsa_qt_p_len = key->qt_p_len;
-
-    pal_ctx->rsa_qt_q_data = key->qt_q_data;
-    pal_ctx->rsa_qt_q_len = key->qt_q_len;
-
-    pal_ctx->rsa_qt_dP_data = key->qt_dP_data;
-    pal_ctx->rsa_qt_dP_len = key->qt_dP_len;
-
-    pal_ctx->rsa_qt_dQ_data = key->qt_dQ_data;
-    pal_ctx->rsa_qt_dQ_len = key->qt_dQ_len;
-
-    pal_ctx->rsa_qt_qInv_data = key->qt_qInv_data;
-    pal_ctx->rsa_qt_qInv_len = key->qt_qInv_len;
-
-    pal_ctx->rsa_key_type = PAL_RSA_KEY_TYPE_QT;
-
-    return;
-}
-
-static inline void
-rsa_xform_non_crt_setup(const prov_rsa_key_data * key, pal_rsa_ctx_t *pal_ctx)
-{
-
-    pal_ctx->rsa_n_data = key->n_data;
-    pal_ctx->rsa_n_len = key->n_len;
-
-    pal_ctx->rsa_e_data = key->e_data;
-    pal_ctx->rsa_e_len = key->e_len;
-
-    pal_ctx->rsa_d_data = key->d_data;
-    pal_ctx->rsa_d_len = key->d_len;
-
-    pal_ctx->rsa_key_type = PAL_RSA_KEY_TYPE_EXP;
-
-    return;
-
-}
-
 static inline int rsa_sign_sw(const unsigned char *from, int flen,
         unsigned char *to, size_t *to_len, PROV_RSA_CTX * ctx)
 {
@@ -787,7 +737,7 @@ static int prov_rsa_verify(void *vctx, const unsigned char *sig,
     }
     pal_ctx.async_cb = provider_ossl_handle_async_job;
 
-    rsa_xform_non_crt_setup(prsactx->key, &pal_ctx);
+    rsa_xform_pub_setup(prsactx->key, &pal_ctx);
 
     /* pal_rsa_verify handles both PKCS1 and NO_PADDING internally */
     ret = pal_rsa_verify(&pal_ctx, siglen, sig, tbs, tbslen);

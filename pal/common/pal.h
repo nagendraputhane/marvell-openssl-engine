@@ -157,6 +157,7 @@ void pal_get_prop_name_and_desc(char* name,int len,
                                     char* ec_desc, int ec_len);
 void pal_get_provider_name(char *name, int len);
 
+bool pal_supports_kem(void);
 int pal_cryptodev_configuration(pal_cryptodev_config_t *config);
 int pal_get_sym_valid_dev(int index);
 int pal_set_hw_offload_pktsz_thresh(uint16_t pkt_sz_thresh);

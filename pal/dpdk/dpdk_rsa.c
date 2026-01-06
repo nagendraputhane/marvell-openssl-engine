@@ -441,7 +441,7 @@ int pal_rsa_verify(pal_rsa_ctx_t *pal_ctx, int signlen, const unsigned char *sig
 
 	/* Path 2: PKCS1_PADDING - Create xform directly for driver comparison */
 	if (!asym_get_valid_devid_qid(&pal_ctx->dev_id, &pal_ctx->qp_id))
-		return 0;
+		return -1;
 
 	/* Generate Crypto op data structure */
 	cry_op = rte_crypto_op_alloc(pools->asym_op_pool,
@@ -546,7 +546,8 @@ int pal_rsa_pub_enc(pal_rsa_ctx_t *pal_ctx, int flen,
 	struct rte_crypto_op *cry_op = NULL;
 	uint32_t op_size = 0;
 	int ret = 0;
-
+	if (!asym_get_valid_devid_qid(&pal_ctx->dev_id, &pal_ctx->qp_id))
+		return -1;
 	/* Generate Crypto op data structure */
 	cry_op = rte_crypto_op_alloc(pools->asym_op_pool,
 				     RTE_CRYPTO_OP_TYPE_ASYMMETRIC);
@@ -633,7 +634,8 @@ int pal_rsa_priv_dec(pal_rsa_ctx_t *pal_ctx, int flen,
 	struct rte_crypto_op *cry_op = NULL;
 	uint32_t op_size = 0;
 	int ret = 0;
-
+	if (!asym_get_valid_devid_qid(&pal_ctx->dev_id, &pal_ctx->qp_id))
+		return -1;
 	/* Generate Crypto op data structure */
 	cry_op = rte_crypto_op_alloc(pools->asym_op_pool,
 				     RTE_CRYPTO_OP_TYPE_ASYMMETRIC);
@@ -648,7 +650,10 @@ int pal_rsa_priv_dec(pal_rsa_ctx_t *pal_ctx, int flen,
 	rsa_xform = __rte_crypto_op_get_priv_data(cry_op, op_size);
 
 	/* Setup priv xform opertions */
-	setup_crt_priv_op_xform(rsa_xform, pal_ctx);
+	if (pal_ctx->use_crt_method)
+		setup_crt_priv_op_xform(rsa_xform, pal_ctx);
+	else
+		setup_non_crt_pub_op_xform(rsa_xform, pal_ctx);
 
 #if RTE_VERSION >= RTE_VERSION_NUM(24, 11, 0, 0)
 	if (pal_ctx->padding == PAL_RSA_NO_PADDING)

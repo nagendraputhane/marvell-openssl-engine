@@ -3,6 +3,10 @@
  */
 #ifndef __RSA_SIG_H__
 #define __RSA_SIG_H__
+
+#include "rsa_kmgmt.h"
+#include "pal_rsa.h"
+
 #define ASN1_SEQUENCE 0x30
 #define ASN1_OCTET_STRING 0x04
 #define ASN1_NULL 0x05
@@ -37,7 +41,7 @@ ENCODE_DIGESTINFO_SHA(sha256, 0x01, SHA256_DIGEST_LENGTH)
     case NID_##name:                                                           \
         *len = sizeof(digestinfo_##name##_der);                                \
         return digestinfo_##name##_der;
-const unsigned char *ossl_rsa_digestinfo_encoding(int md_nid, size_t *len)
+static inline const unsigned char *ossl_rsa_digestinfo_encoding(int md_nid, size_t *len)
 {
     switch (md_nid) {
 	MD_CASE(sha224)
@@ -94,4 +98,61 @@ static int encode_pkcs1(unsigned char **out, size_t *out_len, int type,
     return 1;
 }
 
+/*
+ * Setup PAL context for CRT private key operations
+ */
+static inline void
+rsa_xform_crt_setup(const prov_rsa_key_data *key, pal_rsa_ctx_t *pal_ctx)
+{
+    pal_ctx->rsa_n_data = key->n_data;
+    pal_ctx->rsa_n_len = key->n_len;
+
+    pal_ctx->rsa_e_data = key->e_data;
+    pal_ctx->rsa_e_len = key->e_len;
+
+    pal_ctx->rsa_qt_p_data = key->qt_p_data;
+    pal_ctx->rsa_qt_p_len = key->qt_p_len;
+
+    pal_ctx->rsa_qt_q_data = key->qt_q_data;
+    pal_ctx->rsa_qt_q_len = key->qt_q_len;
+
+    pal_ctx->rsa_qt_dP_data = key->qt_dP_data;
+    pal_ctx->rsa_qt_dP_len = key->qt_dP_len;
+
+    pal_ctx->rsa_qt_dQ_data = key->qt_dQ_data;
+    pal_ctx->rsa_qt_dQ_len = key->qt_dQ_len;
+
+    pal_ctx->rsa_qt_qInv_data = key->qt_qInv_data;
+    pal_ctx->rsa_qt_qInv_len = key->qt_qInv_len;
+
+    pal_ctx->rsa_key_type = PAL_RSA_KEY_TYPE_QT;
+}
+
+static inline void
+rsa_xform_pub_setup(const prov_rsa_key_data *key, pal_rsa_ctx_t *pal_ctx)
+{
+    pal_ctx->rsa_n_data = key->n_data;
+    pal_ctx->rsa_n_len = key->n_len;
+
+    pal_ctx->rsa_e_data = key->e_data;
+    pal_ctx->rsa_e_len = key->e_len;
+}
+
+/*
+ * Setup PAL context for non-CRT private key operations
+ */
+static inline void
+rsa_xform_non_crt_setup(const prov_rsa_key_data *key, pal_rsa_ctx_t *pal_ctx)
+{
+    pal_ctx->rsa_n_data = key->n_data;
+    pal_ctx->rsa_n_len = key->n_len;
+
+    pal_ctx->rsa_e_data = key->e_data;
+    pal_ctx->rsa_e_len = key->e_len;
+
+    pal_ctx->rsa_d_data = key->d_data;
+    pal_ctx->rsa_d_len = key->d_len;
+
+    pal_ctx->rsa_key_type = PAL_RSA_KEY_TYPE_EXP;
+}
 #endif

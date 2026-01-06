@@ -5,10 +5,12 @@
 #define _GNU_SOURCE
 #include <string.h>
 #include <openssl/bn.h>
+#include <openssl/param_build.h>
 #include <openssl/core_dispatch.h>
 #include <openssl/core_names.h>
 #include <openssl/objects.h>
 #include <openssl/params.h>
+#include <openssl/rsa.h> // for software key gen
 
 #include "prov.h"
 #include "rsa_kmgmt.h"
@@ -22,6 +24,12 @@ static OSSL_FUNC_keymgmt_import_fn prov_rsa_import;
 static OSSL_FUNC_keymgmt_import_types_fn prov_rsa_import_types;
 static OSSL_FUNC_keymgmt_export_fn prov_rsa_export;
 static OSSL_FUNC_keymgmt_export_types_fn prov_rsa_export_types;
+static OSSL_FUNC_keymgmt_gen_init_fn rsa_gen_init;
+static OSSL_FUNC_keymgmt_gen_set_params_fn rsa_gen_set_params;
+static OSSL_FUNC_keymgmt_gen_settable_params_fn rsa_gen_settable_params;
+static OSSL_FUNC_keymgmt_gen_settable_params_fn rsapss_gen_settable_params;
+static OSSL_FUNC_keymgmt_gen_fn rsa_gen;
+static OSSL_FUNC_keymgmt_gen_cleanup_fn rsa_gen_cleanup;
 
 /* Parametaers that OpenSSL core can retrieve from our provider */
 static OSSL_PARAM prov_rsa_params[] = {
@@ -42,6 +50,46 @@ static OSSL_PARAM prov_rsa_key_types[] = {
     OSSL_PARAM_BN(OSSL_PKEY_PARAM_RSA_EXPONENT2, NULL, 0),
     OSSL_PARAM_BN(OSSL_PKEY_PARAM_RSA_COEFFICIENT1, NULL, 0),
 };
+
+#define PROV_RSA_DEFAULT_PRIME_NUM    2
+#define PROV_RSA_DEFAULT_KEY_BITS     2048
+#define PROV_PUB_EXP_DEFAULT    0x10001
+#define PROV_FLAG_TYPE_RSA   0x0000
+#define PROV_RSA_MIN_MODULUS_BITS    512
+#define PROV_FLAG_TYPE_MASK    0xF000
+
+/* Key gen */
+struct rsa_gen_ctx {
+    OSSL_LIB_CTX *libctx;
+    const char *propq;
+
+    int rsa_type;
+
+    size_t nbits;
+    BIGNUM *pub_exp;
+    size_t primes;
+    /* For generation callback */
+    OSSL_CALLBACK *cb;
+    void *cbarg;
+};
+
+static inline RSA *prov_rsa_new_intern(OSSL_LIB_CTX *libctx)
+{
+    RSA *ret = RSA_new();
+    if (ret == NULL)
+        return NULL;
+    return ret;
+}
+
+static int rsa_gencb(int p, int n, BN_GENCB *cb)
+{
+    struct rsa_gen_ctx *gctx = BN_GENCB_get_arg(cb);
+    OSSL_PARAM params[] = { OSSL_PARAM_END, OSSL_PARAM_END, OSSL_PARAM_END };
+
+    params[0] = OSSL_PARAM_construct_int(OSSL_GEN_PARAM_POTENTIAL, &p);
+    params[1] = OSSL_PARAM_construct_int(OSSL_GEN_PARAM_ITERATION, &n);
+    return gctx->cb(params, gctx->cbarg);
+}
 
 /**
  * Create new provider side key object to be used with other KEYMGMT and SIGNATURE functions
@@ -131,7 +179,7 @@ static int prov_rsa_get_params(void *key, OSSL_PARAM params[])
 	if (!OSSL_PARAM_set_int(p, sec_bits))
 	    return 0;
 
-	fprintf(stderr,
+	engine_log(ENG_LOG_INFO,
 		"%s:%d:%s(): Failed to set security bits value %d\n",
 		__FILE__, __LINE__, __func__, sec_bits);
 	return 1;
@@ -141,7 +189,7 @@ static int prov_rsa_get_params(void *key, OSSL_PARAM params[])
     if (p != NULL && !OSSL_PARAM_set_int(p, kd->n_len))
 	return 0;
 
-    fprintf(stderr, "%s:%d:%s(): Unknown OSSL_PARAM key\n", __FILE__,
+    engine_log(ENG_LOG_INFO, "%s:%d:%s(): Unknown OSSL_PARAM key\n", __FILE__,
 	    __LINE__, __func__);
     return 1;
 }
@@ -303,19 +351,355 @@ static int prov_rsa_import(void *keydata, int selection,
 static int prov_rsa_export(void *keydata, int selection,
 			   OSSL_CALLBACK * param_callback, void *cbarg)
 {
-    (void) keydata;
-    (void) selection;
-    (void) param_callback;
-    (void) cbarg;
+    prov_rsa_key_data *kd = (prov_rsa_key_data *)keydata;
+    OSSL_PARAM_BLD *tmpl = NULL;
+    OSSL_PARAM *params = NULL;
+    BIGNUM *bn_n = NULL, *bn_e = NULL, *bn_d = NULL;
+    BIGNUM *bn_p = NULL, *bn_q = NULL;
+    BIGNUM *bn_dP = NULL, *bn_dQ = NULL, *bn_qInv = NULL;
+    int ok = 0;
 
-    fprintf(stderr,
-	    "%s:%d:%s(): Key data export function not implemented\n",
-	    __FILE__, __LINE__, __func__);
+    if (kd == NULL || !prov_is_running())
+        return 0;
+
+    if ((selection & OSSL_KEYMGMT_SELECT_KEYPAIR) == 0)
+        return 0;
+
+    tmpl = OSSL_PARAM_BLD_new();
+    if (tmpl == NULL)
+        return 0;
+
+    /* Public key components (always exported) */
+    if (kd->n_data && kd->n_len > 0) {
+        bn_n = BN_bin2bn(kd->n_data, kd->n_len, NULL);
+        if (bn_n == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_N, bn_n))
+            goto err;
+    }
+
+    if (kd->e_data && kd->e_len > 0) {
+        bn_e = BN_bin2bn(kd->e_data, kd->e_len, NULL);
+        if (bn_e == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_E, bn_e))
+            goto err;
+    }
+
+    /* Private key components (if requested and available) */
+    if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0) {
+        /* Export private exponent d if available */
+        if (kd->d_data && kd->d_len > 0) {
+            bn_d = BN_bin2bn(kd->d_data, kd->d_len, NULL);
+            if (bn_d == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_D, bn_d))
+                goto err;
+        }
+
+        /* Export CRT parameters if available */
+        if (kd->use_crt) {
+            if (kd->qt_p_data && kd->qt_p_len > 0) {
+                bn_p = BN_bin2bn(kd->qt_p_data, kd->qt_p_len, NULL);
+                if (bn_p == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_FACTOR1, bn_p))
+                    goto err;
+            }
+
+            if (kd->qt_q_data && kd->qt_q_len > 0) {
+                bn_q = BN_bin2bn(kd->qt_q_data, kd->qt_q_len, NULL);
+                if (bn_q == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_FACTOR2, bn_q))
+                    goto err;
+            }
+
+            if (kd->qt_dP_data && kd->qt_dP_len > 0) {
+                bn_dP = BN_bin2bn(kd->qt_dP_data, kd->qt_dP_len, NULL);
+                if (bn_dP == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_EXPONENT1, bn_dP))
+                    goto err;
+            }
+
+            if (kd->qt_dQ_data && kd->qt_dQ_len > 0) {
+                bn_dQ = BN_bin2bn(kd->qt_dQ_data, kd->qt_dQ_len, NULL);
+                if (bn_dQ == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_EXPONENT2, bn_dQ))
+                    goto err;
+            }
+
+            if (kd->qt_qInv_data && kd->qt_qInv_len > 0) {
+                bn_qInv = BN_bin2bn(kd->qt_qInv_data, kd->qt_qInv_len, NULL);
+                if (bn_qInv == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_COEFFICIENT1, bn_qInv))
+                    goto err;
+            }
+        }
+    }
+
+    params = OSSL_PARAM_BLD_to_param(tmpl);
+    if (params == NULL)
+        goto err;
+
+    ok = param_callback(params, cbarg);
+
+err:
+    OSSL_PARAM_free(params);
+    OSSL_PARAM_BLD_free(tmpl);
+    BN_free(bn_n);
+    BN_free(bn_e);
+    BN_free(bn_d);
+    BN_free(bn_p);
+    BN_free(bn_q);
+    BN_free(bn_dP);
+    BN_free(bn_dQ);
+    BN_free(bn_qInv);
+
+    return ok;
+}
+
+static void *gen_init(void *provctx, int selection, int rsa_type,
+                      const OSSL_PARAM params[])
+{
+    struct rsa_gen_ctx *gctx = NULL;
+
+    if (!prov_is_running())
+        return NULL;
+
+    if ((selection & OSSL_KEYMGMT_SELECT_KEYPAIR) == 0)
+        return NULL;
+
+    if ((gctx = OPENSSL_malloc(sizeof(*gctx))) != NULL) {
+        gctx->libctx = PROV_LIBCTX_OF(provctx);
+        if ((gctx->pub_exp = BN_new()) == NULL
+            || !BN_set_word(gctx->pub_exp, PROV_PUB_EXP_DEFAULT)) {
+            goto err;
+        }
+        gctx->nbits = PROV_RSA_DEFAULT_KEY_BITS;
+        gctx->primes = PROV_RSA_DEFAULT_PRIME_NUM;
+        gctx->rsa_type = rsa_type;
+    } else {
+        goto err;
+    }
+
+    if (!rsa_gen_set_params(gctx, params))
+        goto err;
+    return gctx;
+
+err:
+    if (gctx != NULL)
+        BN_free(gctx->pub_exp);
+    OPENSSL_free(gctx);
+    return NULL;
+}
+
+static void *rsa_gen_init(void *provctx, int selection,
+                          const OSSL_PARAM params[])
+{
+    return gen_init(provctx, selection, PROV_FLAG_TYPE_RSA, params);
+}
+
+/*
+ * This function is common for all RSA sub-types, to detect possible
+ * misuse, such as PSS parameters being passed when a plain RSA key
+ * is generated.
+ */
+static int rsa_gen_set_params(void *genctx, const OSSL_PARAM params[])
+{
+    struct rsa_gen_ctx *gctx = genctx;
+    const OSSL_PARAM *p;
+
+    if (params == NULL)
+        return 1;
+
+    if ((p = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_BITS)) != NULL) {
+        if (!OSSL_PARAM_get_size_t(p, &gctx->nbits))
+            return 0;
+        if (gctx->nbits < PROV_RSA_MIN_MODULUS_BITS) {
+            fprintf(stderr,
+                "%s:%d:%s(): Key size is too small %zu\n",
+                __FILE__, __LINE__, __func__, gctx->nbits);
+            return 0;
+        }
+    }
+    if ((p = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_PRIMES)) != NULL
+        && !OSSL_PARAM_get_size_t(p, &gctx->primes))
+        return 0;
+    if ((p = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_E)) != NULL
+        && !OSSL_PARAM_get_BN(p, &gctx->pub_exp))
+        return 0;
+    return 1;
+}
+
+#define rsa_gen_basic                                           \
+    OSSL_PARAM_size_t(OSSL_PKEY_PARAM_RSA_BITS, NULL),          \
+    OSSL_PARAM_size_t(OSSL_PKEY_PARAM_RSA_PRIMES, NULL),        \
+    OSSL_PARAM_BN(OSSL_PKEY_PARAM_RSA_E, NULL, 0)
+
+static const OSSL_PARAM *rsa_gen_settable_params(ossl_unused void *genctx,
+                                                 ossl_unused void *provctx)
+{
+    static OSSL_PARAM settable[] = {
+        rsa_gen_basic,
+        OSSL_PARAM_END
+    };
+
+    return settable;
+}
+
+static int prov_rsa_to_keydata(RSA *rsa, void **keydata)
+{
+    const BIGNUM *p = NULL, *q = NULL, *dP = NULL, *dQ = NULL, *qInv = NULL, *n = NULL, *e = NULL, *d = NULL;
+    prov_rsa_key_data *kd = NULL;
+    uint8_t *base = NULL;
+    int alloc_sz = 0;
+    int ret = 0;
+
+    if (!rsa)
+        return 0;
+
+    kd = pal_malloc(sizeof(prov_rsa_key_data));
+    if (!kd)
+        return 0;
+    memset(kd, 0, sizeof(prov_rsa_key_data));
+    PROV_ATOMIC_INC(kd->refcnt);
+
+    RSA_get0_key(rsa, &n, &e, &d);
+    RSA_get0_factors(rsa, &p, &q);
+    RSA_get0_crt_params(rsa, &dP, &dQ, &qInv);
+    int crt_length = BN_num_bytes(n) / 2;
+
+    if (n && e)
+        alloc_sz = BN_num_bytes(n) + BN_num_bytes(e);
+    else
+        goto err;
+
+    if (p && q && dP && dQ && qInv && d) {
+        alloc_sz += BN_num_bytes(d);
+        alloc_sz += crt_length * 5;
+    } else if (d) {
+        alloc_sz += BN_num_bytes(d);
+    } else
+        goto err;
+
+    base = (uint8_t *)pal_malloc(alloc_sz);
+    if (!base) {
+       fprintf(stderr, "%s:%d:%s(): Failed to allocate memory for RSA key data\n",
+               __FILE__, __LINE__, __func__);
+       goto err;
+    }
+
+    kd->n_data = base;
+    kd->n_len = BN_bn2bin(n, kd->n_data);
+
+    kd->e_data = base + kd->n_len;
+    kd->e_len = BN_bn2bin(e, kd->e_data);
+
+    if (p && q && dP && dQ && qInv && d) {
+       kd->use_crt = 1;
+       /* Store d first (needed for export and software fallback) */
+       kd->d_data = kd->e_data + kd->e_len;
+       kd->d_len = BN_bn2bin(d, kd->d_data);
+
+        /* Microcode requires CRT parameters be prepadded with zeroes if length
+         * is lesser than modlength/2
+        */
+       kd->qt_p_data = kd->d_data + kd->d_len;
+       kd->qt_p_len = BN_bn2binpad(p, kd->qt_p_data, crt_length);
+
+       kd->qt_q_data = kd->qt_p_data + kd->qt_p_len;
+       kd->qt_q_len = BN_bn2binpad(q, kd->qt_q_data, crt_length);
+
+       kd->qt_dP_data = kd->qt_q_data + kd->qt_q_len;
+       kd->qt_dP_len = BN_bn2binpad(dP, kd->qt_dP_data, crt_length);
+
+       kd->qt_dQ_data = kd->qt_dP_data + kd->qt_dP_len;
+       kd->qt_dQ_len = BN_bn2binpad(dQ, kd->qt_dQ_data, crt_length);
+
+       kd->qt_qInv_data = kd->qt_dQ_data + kd->qt_dQ_len;
+       kd->qt_qInv_len = BN_bn2binpad(qInv, kd->qt_qInv_data, crt_length);
+    }
+    else {
+      kd->use_crt = 0;
+      kd->d_data = kd->e_data + kd->e_len;
+      kd->d_len = BN_bn2bin(d, kd->d_data);
+    }
+
+    kd->base_ptr = base;
+    *keydata = (void *)kd;
+    ret = 1;
+    return ret;
+
+err:
+    if (base)
+        pal_free(base);
+    if (kd)
+        pal_free(kd);
     return 0;
+}
+
+static void *rsa_gen(void *genctx, OSSL_CALLBACK *osslcb, void *cbarg)
+{
+    struct rsa_gen_ctx *gctx = genctx;
+    RSA *rsa_tmp = NULL;
+    void *keydata = NULL;
+    BN_GENCB *gencb = NULL;
+
+    if (!prov_is_running() || gctx == NULL)
+        return NULL;
+
+    switch (gctx->rsa_type) {
+    case PROV_FLAG_TYPE_RSA:
+        break;
+    default:
+        fprintf(stderr,
+            "%s:%d:%s():  Unsupported RSA key sub-type %d\n",
+            __FILE__, __LINE__, __func__, gctx->rsa_type);
+        return NULL;
+    }
+
+    if ((rsa_tmp = prov_rsa_new_intern(gctx->libctx)) == NULL)
+        return NULL;
+
+    gctx->cb = osslcb;
+    gctx->cbarg = cbarg;
+    gencb = BN_GENCB_new();
+    if (gencb != NULL)
+        BN_GENCB_set(gencb, rsa_gencb, genctx);
+
+    if (!RSA_generate_multi_prime_key(rsa_tmp,
+                                      (int)gctx->nbits, (int)gctx->primes,
+                                      gctx->pub_exp, gencb))
+        goto err;
+
+    RSA_clear_flags(rsa_tmp, PROV_FLAG_TYPE_MASK);
+    RSA_set_flags(rsa_tmp, gctx->rsa_type);
+
+    if (!prov_rsa_to_keydata(rsa_tmp, &keydata)) {
+        goto err;
+    }
+
+    /* Free the RSA object after converting to our key format */
+    RSA_free(rsa_tmp);
+    rsa_tmp = NULL;
+
+    BN_GENCB_free(gencb);
+    return keydata;
+
+ err:
+    BN_GENCB_free(gencb);
+    if (rsa_tmp != NULL)
+        RSA_free(rsa_tmp);
+    return NULL;
+}
+
+static void rsa_gen_cleanup(void *genctx)
+{
+    struct rsa_gen_ctx *gctx = genctx;
+
+    if (gctx == NULL)
+        return;
+    BN_clear_free(gctx->pub_exp);
+    OPENSSL_free(gctx);
 }
 
 const OSSL_DISPATCH prov_rsa_keymgmt_functions[] = {
     { OSSL_FUNC_KEYMGMT_NEW, (void (*)(void)) prov_rsa_newdata },
+    { OSSL_FUNC_KEYMGMT_GEN_INIT, (void (*)(void))rsa_gen_init },
+    { OSSL_FUNC_KEYMGMT_GEN_SET_PARAMS,
+      (void (*)(void))rsa_gen_set_params },
+    { OSSL_FUNC_KEYMGMT_GEN_SETTABLE_PARAMS,
+      (void (*)(void))rsa_gen_settable_params },
+    { OSSL_FUNC_KEYMGMT_GEN, (void (*)(void))rsa_gen },
+    { OSSL_FUNC_KEYMGMT_GEN_CLEANUP, (void (*)(void))rsa_gen_cleanup },
     { OSSL_FUNC_KEYMGMT_FREE, (void (*)(void)) prov_rsa_freedata },
     { OSSL_FUNC_KEYMGMT_GET_PARAMS, (void (*)(void)) prov_rsa_get_params },
     { OSSL_FUNC_KEYMGMT_GETTABLE_PARAMS,
@@ -329,3 +713,4 @@ const OSSL_DISPATCH prov_rsa_keymgmt_functions[] = {
      (void (*)(void)) prov_rsa_export_types },
     { 0, NULL }
 };
+

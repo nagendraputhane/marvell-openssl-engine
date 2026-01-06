@@ -243,6 +243,11 @@ void pal_get_provider_name(char *name, int len)
 	name[len - 1] = '\0';
 }
 
+bool pal_supports_kem(void)
+{
+	return false;
+}
+
 void pal_crypto_uninit()
 {
 	struct dao_lc_info *info;

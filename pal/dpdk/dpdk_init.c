@@ -419,3 +419,8 @@ void pal_get_provider_name(char *name, int len)
 	strncpy(name, "OPENSSL DPDK PROVIDER", len - 1);
 	name[len - 1] = '\0';
 }
+
+bool pal_supports_kem(void)
+{
+	return true;
+}

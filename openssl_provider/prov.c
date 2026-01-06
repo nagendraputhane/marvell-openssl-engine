@@ -48,6 +48,9 @@ extern const OSSL_DISPATCH prov_ecdh_keyexch_functions[];
 extern const OSSL_DISPATCH prov_ec_keymgmt_functions[];
 extern const OSSL_DISPATCH prov_rsa_keymgmt_functions[];
 
+/* RSA KEM*/
+extern const OSSL_DISPATCH prov_rsa_asym_kem_functions[];
+
 int prov_get_capabilities(void *provctx, const char *capability,
                                OSSL_CALLBACK *cb, void *arg) ;
 
@@ -262,6 +265,11 @@ static const OSSL_ALGORITHM prov_keymgmt[] = {
     { NULL, NULL, NULL }
 };
 
+static const OSSL_ALGORITHM prov_asym_kem[] = {
+    { PROV_NAMES_RSA, prop_name, prov_rsa_asym_kem_functions},
+    { NULL, NULL, NULL }
+};
+
 static const OSSL_ALGORITHM *prov_query(void *provctx, int operation_id,
                                          int *no_cache)
 {
@@ -279,6 +287,8 @@ static const OSSL_ALGORITHM *prov_query(void *provctx, int operation_id,
         return prov_signature;
     case OSSL_OP_ASYM_CIPHER:
         return prov_asym_cipher;
+    case OSSL_OP_KEM:
+        return pal_supports_kem() ? prov_asym_kem : NULL;
     }
     return NULL;
 }
