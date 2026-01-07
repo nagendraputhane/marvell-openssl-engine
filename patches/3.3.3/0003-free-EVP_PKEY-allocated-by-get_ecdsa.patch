@@ -1,0 +1,25 @@
+From 3472bcc280dc9ca309749c426e91b1e8007770c1 Mon Sep 17 00:00:00 2001
+From: Rifat Fatma <rfatma@marvell.com>
+Date: Wed, 7 Jan 2026 11:12:34 +0530
+Subject: [PATCH] free EVP_PKEY allocated by get_ecdsa()
+
+Signed-off-by: Rifat Fatma <rfatma@marvell.com>
+---
+ apps/speed.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/apps/speed.c b/apps/speed.c
+index c951c33cf7..e547702bee 100644
+--- a/apps/speed.c
++++ b/apps/speed.c
+@@ -3474,6 +3474,7 @@ int speed_main(int argc, char **argv)
+             /* if longer than 10s, don't do any more */
+             stop_it(ecdsa_doit, testnum);
+         }
++        EVP_PKEY_free(ecdsa_key);
+     }
+ 
+     for (testnum = 0; testnum < EC_NUM; testnum++) {
+-- 
+2.34.1
+
