@@ -83,18 +83,7 @@ typedef struct {
     /* Minimum salt length or -1 if no PSS parameter restriction */
     int min_saltlen;
     unsigned char *tbuf;
-    /* Flag to indicate software fallback for unsupported key sizes */
-    int use_sw_fallback;
-    /* Software RSA key for fallback */
-    RSA *sw_rsa;
 } PROV_RSA_CTX;
-
-static inline int prov_rsa_check_modlen(prov_rsa_key_data * key)
-{
-    int16_t modlen = key->n_len;
-
-    return pal_rsa_capability_check_modlen(modlen);
-}
 
 #define prov_rsa_pss_restricted(prsactx) ((prsactx)->min_saltlen != -1)
 
@@ -102,7 +91,7 @@ static int setup_tbuf(PROV_RSA_CTX *ctx)
 {
     if (ctx->tbuf != NULL)
         return 1;
-    if ((ctx->tbuf = OPENSSL_malloc(ctx->key->n_len)) == NULL) {
+    if ((ctx->tbuf = OPENSSL_malloc(prov_rsa_key_len(ctx->key))) == NULL) {
         ERR_raise(ERR_LIB_PROV, ERR_R_MALLOC_FAILURE);
         return 0;
     }
@@ -112,7 +101,7 @@ static int setup_tbuf(PROV_RSA_CTX *ctx)
 static void clean_tbuf(PROV_RSA_CTX *ctx)
 {
     if (ctx->tbuf != NULL)
-        OPENSSL_cleanse(ctx->tbuf, ctx->key->n_len);
+        OPENSSL_cleanse(ctx->tbuf, prov_rsa_key_len(ctx->key));
 }
 
 static void free_tbuf(PROV_RSA_CTX *ctx)
@@ -143,8 +132,6 @@ static void *rsa_newctx(void *provctx, const char *propq)
     /* Maximum up to digest length for sign, auto for verify */
     prsactx->saltlen = RSA_PSS_SALTLEN_AUTO_DIGEST_MAX;
     prsactx->min_saltlen = -1;
-    prsactx->use_sw_fallback = 0;
-    prsactx->sw_rsa = NULL;
     return prsactx;
 }
 
@@ -167,7 +154,6 @@ static void *rsa_dupctx(void *vprsactx)
     dstctx->mgf1_md = NULL;
     dstctx->propq = NULL;
     dstctx->tbuf = NULL;
-    dstctx->sw_rsa = NULL;
 
     if (srcctx->key != NULL) {
         (void) PROV_ATOMIC_INC(srcctx->key->refcnt);
@@ -197,11 +183,6 @@ static void *rsa_dupctx(void *vprsactx)
         dstctx->propq = OPENSSL_strdup(srcctx->propq);
         if (dstctx->propq == NULL)
             goto err;
-    }
-
-    if (srcctx->sw_rsa != NULL) {
-        RSA_up_ref(srcctx->sw_rsa);
-        dstctx->sw_rsa = srcctx->sw_rsa;
     }
 
     return dstctx;
@@ -256,8 +237,8 @@ int prov_padding_add_PKCS1_PSS_mgf1(prov_rsa_key_data *rsa, unsigned char *EM,
         goto err;
     }
 
-    MSBits = (rsa->n_len - 1) & 0x7;
-    emLen = rsa->n_len;
+    MSBits = (prov_rsa_key_len(rsa) - 1) & 0x7;
+    emLen = prov_rsa_key_len(rsa);
     if (MSBits == 0) {
         *EM++ = 0;
         emLen--;
@@ -328,81 +309,6 @@ int prov_padding_add_PKCS1_PSS_mgf1(prov_rsa_key_data *rsa, unsigned char *EM,
 
 }
 
-static RSA *prov_rsa_key_to_openssl_rsa(prov_rsa_key_data *key)
-{
-    RSA *rsa = NULL;
-    BIGNUM *n = NULL, *e = NULL, *d = NULL;
-    BIGNUM *p = NULL, *q = NULL, *dmp1 = NULL, *dmq1 = NULL, *iqmp = NULL;
-
-    rsa = RSA_new();
-    if (rsa == NULL)
-        return NULL;
-
-    /* Set public key components */
-    n = BN_bin2bn(key->n_data, key->n_len, NULL);
-    e = BN_bin2bn(key->e_data, key->e_len, NULL);
-    if (n == NULL || e == NULL)
-        goto err;
-
-    if (!RSA_set0_key(rsa, n, e, NULL)) {
-        goto err;
-    }
-    n = NULL;
-    e = NULL;
-
-    /* Set private key components if available */
-    if (key->d_data != NULL && key->d_len > 0) {
-        d = BN_bin2bn(key->d_data, key->d_len, NULL);
-        if (d == NULL)
-            goto err;
-        if (!RSA_set0_key(rsa, NULL, NULL, d)) {
-            goto err;
-        }
-        d = NULL;
-    }
-
-    /* Set CRT parameters: p/q implied by use_crt; check dP/dQ/qInv */
-    if (key->use_crt &&
-        key->qt_dP_data != NULL && key->qt_dQ_data != NULL &&
-        key->qt_qInv_data != NULL) {
-        p = BN_bin2bn(key->qt_p_data, key->qt_p_len, NULL);
-        q = BN_bin2bn(key->qt_q_data, key->qt_q_len, NULL);
-        dmp1 = BN_bin2bn(key->qt_dP_data, key->qt_dP_len, NULL);
-        dmq1 = BN_bin2bn(key->qt_dQ_data, key->qt_dQ_len, NULL);
-        iqmp = BN_bin2bn(key->qt_qInv_data, key->qt_qInv_len, NULL);
-
-        if (p == NULL || q == NULL || dmp1 == NULL || dmq1 == NULL || iqmp == NULL)
-            goto err;
-
-        if (!RSA_set0_factors(rsa, p, q)) {
-            goto err;
-        }
-        p = NULL;
-        q = NULL;
-
-        if (!RSA_set0_crt_params(rsa, dmp1, dmq1, iqmp)) {
-            goto err;
-        }
-        dmp1 = NULL;
-        dmq1 = NULL;
-        iqmp = NULL;
-    }
-
-    return rsa;
-
-err:
-    RSA_free(rsa);
-    BN_free(n);
-    BN_free(e);
-    BN_free(d);
-    BN_free(p);
-    BN_free(q);
-    BN_free(dmp1);
-    BN_free(dmq1);
-    BN_free(iqmp);
-    return NULL;
-}
-
 static inline int
 rsa_signverify_init(void *vctx, void *provkey,
         const OSSL_PARAM params[], int operation)
@@ -425,21 +331,12 @@ rsa_signverify_init(void *vctx, void *provkey,
 
     /* Check if hardware supports this modulus length */
     if (unlikely(prov_rsa_check_modlen(prsactx->key) != 0)) {
-        prsactx->use_sw_fallback = 1;
-
-        /* Create OpenSSL RSA key for software fallback */
-        if (prsactx->sw_rsa != NULL) {
-            RSA_free(prsactx->sw_rsa);
-            prsactx->sw_rsa = NULL;
-        }
-
-        prsactx->sw_rsa = prov_rsa_key_to_openssl_rsa(prsactx->key);
-        if (prsactx->sw_rsa == NULL) {
-            fprintf(stderr, "%s:%d:%s(): Failed to create software RSA key\n",__FILE__, __LINE__, __func__);
+        /* For HW-unsupported keys, key->rsa must exist for software fallback */
+        if (unlikely(prsactx->key->rsa == NULL)) {
+            fprintf(stderr, "%s:%d:%s(): HW-unsupported key missing RSA struct\n",
+                    __FILE__, __LINE__, __func__);
             return 0;
         }
-    } else {
-        prsactx->use_sw_fallback = 0;
     }
 
     prsactx->operation = operation;
@@ -488,7 +385,7 @@ static inline int rsa_sign_sw(const unsigned char *from, int flen,
             return -1;
     }
 
-    ret = RSA_private_encrypt(flen, from, to, ctx->sw_rsa, padding);
+    ret = RSA_private_encrypt(flen, from, to, ctx->key->rsa, padding);
     if (ret < 0) {
         fprintf(stderr, "%s: RSA_private_encrypt failed\n", __func__);
         ERR_print_errors_fp(stderr);
@@ -502,8 +399,8 @@ static inline int rsa_sign_sw(const unsigned char *from, int flen,
 static inline int rsa_sign(const unsigned char *from, int flen,
         unsigned char *to, size_t *to_len, PROV_RSA_CTX * ctx)
 {
-    /* Use software fallback if needed */
-    if (unlikely(ctx->use_sw_fallback)) {
+    /* Use software fallback if key has RSA struct (HW-unsupported) */
+    if (unlikely(ctx->key->rsa != NULL)) {
         return rsa_sign_sw(from, flen, to, to_len, ctx);
     }
 
@@ -531,7 +428,7 @@ static inline int rsa_sign(const unsigned char *from, int flen,
 }
 
 static inline int
-rsa_verify_sw(unsigned char * msg, int msglen, const unsigned char *sig,
+rsa_verify_sw(unsigned char *msg, int msglen, const unsigned char *sig,
         int siglen, PROV_RSA_CTX * ctx)
 {
     int ret = 0;
@@ -554,7 +451,7 @@ rsa_verify_sw(unsigned char * msg, int msglen, const unsigned char *sig,
             return -1;
     }
 
-    ret = RSA_public_decrypt(siglen, sig, decrypt_buf, ctx->sw_rsa, padding);
+    ret = RSA_public_decrypt(siglen, sig, decrypt_buf, ctx->key->rsa, padding);
     if (ret < 0) {
         fprintf(stderr, "%s: RSA_public_decrypt failed\n", __func__);
         ERR_print_errors_fp(stderr);
@@ -637,8 +534,8 @@ int prov_rsa_verify_PKCS1_PSS_mgf1(prov_rsa_key_data *rsa, const unsigned char *
         goto err;
     }
 
-    MSBits = (rsa->n_len - 1) & 0x7;
-    emLen = rsa->n_len;
+    MSBits = (prov_rsa_key_len(rsa) - 1) & 0x7;
+    emLen = prov_rsa_key_len(rsa);
     if (EM[0] & (0xFF << MSBits)) {
         ERR_raise(ERR_LIB_RSA, RSA_R_FIRST_OCTET_INVALID);
         goto err;
@@ -716,8 +613,8 @@ static int prov_rsa_verify(void *vctx, const unsigned char *sig,
 {
     PROV_RSA_CTX *prsactx = (PROV_RSA_CTX *) vctx;
 
-    /* Use software fallback if needed */
-    if (unlikely(prsactx->use_sw_fallback)) {
+    /* Use software fallback if key has RSA struct (HW-unsupported) */
+    if (unlikely(prsactx->key->rsa != NULL)) {
         return rsa_verify_sw(tbs, tbslen, sig, siglen, prsactx);
     }
 
@@ -763,7 +660,6 @@ static void rsa_freectx(void *vctx)
     EVP_MD_free(prsactx->mgf1_md);
     OPENSSL_free(prsactx->propq);
     free_tbuf(prsactx);
-    RSA_free(prsactx->sw_rsa);
     OPENSSL_clear_free(prsactx, sizeof(*prsactx));
 
     return;
@@ -1039,7 +935,7 @@ static int rsa_digest_sign_final(void *vprsactx, unsigned char *sig,
                 return 0;
             }
             ret = prov_rsa_sign(vprsactx, sig, siglen, sigsize, prsactx->tbuf,
-                                prsactx->key->n_len);
+                                prov_rsa_key_len(prsactx->key));
             clean_tbuf(prsactx);
             break;
 
@@ -1128,7 +1024,7 @@ static int rsa_digest_verify_final(void *vprsactx,
 
                 if (!setup_tbuf(prsactx))
                     return 0;
-                ret = prov_rsa_verify(vprsactx, sig, siglen, prsactx->tbuf, prsactx->key->n_len);
+                ret = prov_rsa_verify(vprsactx, sig, siglen, prsactx->tbuf, prov_rsa_key_len(prsactx->key));
                 if (ret <= 0) {
                     ERR_raise(ERR_LIB_PROV, ERR_R_RSA_LIB);
                     return 0;

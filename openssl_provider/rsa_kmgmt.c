@@ -128,7 +128,16 @@ void __prov_rsa_freedata(void *keydata)
     if ((kd == NULL) || PROV_ATOMIC_DEC(kd->refcnt) > 0)
 	return;
 
-    pal_free(kd->base_ptr);
+    /* Refcount reached 0, free resources */
+    if (unlikely(kd->rsa != NULL)) {
+        /* Free RSA struct (owned by keydata) */
+        RSA_free(kd->rsa);
+    } else {
+        /* Free raw data if no RSA struct */
+        pal_free(kd->base_ptr);
+    }
+
+    /* Free the keydata structure itself */
     pal_free(kd);
     return;
 }
@@ -168,12 +177,12 @@ static int prov_rsa_get_params(void *key, OSSL_PARAM params[])
     OSSL_PARAM *p;
 
     p = OSSL_PARAM_locate(params, OSSL_PKEY_PARAM_BITS);
-    if (p != NULL && !OSSL_PARAM_set_int(p, kd->n_len * 8))
+    if (p != NULL && !OSSL_PARAM_set_int(p, prov_rsa_key_len(kd) * 8))
 	return 0;
 
     p = OSSL_PARAM_locate(params, OSSL_PKEY_PARAM_SECURITY_BITS);
     if (p != NULL) {
-	int mod_sz = kd->n_len * 8;
+	int mod_sz = prov_rsa_key_len(kd) * 8;
 	int sec_bits = prov_rsa_modsz_to_security_bits(mod_sz);
 
 	if (!OSSL_PARAM_set_int(p, sec_bits))
@@ -186,7 +195,7 @@ static int prov_rsa_get_params(void *key, OSSL_PARAM params[])
     }
 
     p = OSSL_PARAM_locate(params, OSSL_PKEY_PARAM_MAX_SIZE);
-    if (p != NULL && !OSSL_PARAM_set_int(p, kd->n_len))
+    if (p != NULL && !OSSL_PARAM_set_int(p, prov_rsa_key_len(kd)))
 	return 0;
 
     engine_log(ENG_LOG_INFO, "%s:%d:%s(): Unknown OSSL_PARAM key\n", __FILE__,
@@ -202,14 +211,29 @@ static int prov_rsa_has(const void *keydata, int selection)
     if (kd == NULL || !prov_is_running())
 	return 0;
 
-    if ((selection & OSSL_KEYMGMT_SELECT_KEYPAIR) != 0)
-	ok = ok && (kd->n_data != NULL);
+    if (unlikely(kd->rsa != NULL)) {
+        const BIGNUM *n = NULL, *e = NULL, *d = NULL;
+        RSA_get0_key(kd->rsa, &n, &e, &d);
 
-    if ((selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0)
-	ok = ok && (kd->e_data != NULL);
+        if ((selection & OSSL_KEYMGMT_SELECT_KEYPAIR) != 0)
+            ok = ok && (n != NULL);
 
-    if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0)
-	ok = ok && (kd->d_data != NULL || kd->use_crt);
+        if ((selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0)
+            ok = ok && (e != NULL);
+
+        if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0)
+            ok = ok && (d != NULL);
+    } else {
+        /* Key stored as raw data */
+        if ((selection & OSSL_KEYMGMT_SELECT_KEYPAIR) != 0)
+            ok = ok && (kd->n_data != NULL);
+
+        if ((selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0)
+            ok = ok && (kd->e_data != NULL);
+
+        if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0)
+            ok = ok && (kd->d_data != NULL || kd->use_crt);
+    }
 
     return ok;
 }
@@ -240,9 +264,11 @@ static int prov_rsa_fromdata(void *keydata, const OSSL_PARAM params[],
     const OSSL_PARAM *param_n, *param_e, *param_d = NULL;
     prov_rsa_key_data *kd = (prov_rsa_key_data *) keydata;
     BIGNUM *n = NULL, *e = NULL, *d = NULL;
-    uint8_t *base;
+    uint8_t *base = NULL;
     int alloc_sz;
     int ret = 0;
+    int modulus_bytes = 0;
+    RSA *rsa = NULL;
 
     param_n = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_N);
     param_e = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_E);
@@ -254,8 +280,9 @@ static int prov_rsa_fromdata(void *keydata, const OSSL_PARAM params[],
 	goto err;
     }
 
-    alloc_sz = BN_num_bytes(n) + BN_num_bytes(e);
+    modulus_bytes = BN_num_bytes(n);
 
+    /* Locate private key parameters once if needed */
     if (include_private) {
 	param_d = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_D);
 	param_p = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_FACTOR1);
@@ -264,7 +291,66 @@ static int prov_rsa_fromdata(void *keydata, const OSSL_PARAM params[],
 	param_dP = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_EXPONENT1);
 	param_dQ = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_EXPONENT2);
 	param_qInv = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_RSA_COEFFICIENT1);
+    }
 
+    /* Check if hardware supports this modulus length */
+    if (pal_rsa_capability_check_modlen(modulus_bytes)) {
+        /* Hardware doesn't support this key size, store as RSA struct for SW fallback */
+        rsa = RSA_new();
+        if (!rsa)
+            goto err;
+
+        /* Set public key components */
+        if (!RSA_set0_key(rsa, n, e, NULL)) {
+            RSA_free(rsa);
+            goto err;
+        }
+        /* Ownership transferred, set to NULL */
+        n = NULL;
+        e = NULL;
+
+        if (include_private) {
+            if (param_d && OSSL_PARAM_get_BN(param_d, &d)) {
+                if (!RSA_set0_key(rsa, NULL, NULL, d)) {
+                    RSA_free(rsa);
+                    goto err;
+                }
+                d = NULL;
+            }
+
+            if (param_p && OSSL_PARAM_get_BN(param_p, &p) &&
+                param_q && OSSL_PARAM_get_BN(param_q, &q)) {
+                if (!RSA_set0_factors(rsa, p, q)) {
+                    RSA_free(rsa);
+                    goto err;
+                }
+                p = NULL;
+                q = NULL;
+            }
+
+            if (param_dP && OSSL_PARAM_get_BN(param_dP, &dP) &&
+                param_dQ && OSSL_PARAM_get_BN(param_dQ, &dQ) &&
+                param_qInv && OSSL_PARAM_get_BN(param_qInv, &qInv)) {
+                if (!RSA_set0_crt_params(rsa, dP, dQ, qInv)) {
+                    RSA_free(rsa);
+                    goto err;
+                }
+                dP = NULL;
+                dQ = NULL;
+                qInv = NULL;
+            }
+        }
+
+        /* Store only the RSA struct, no raw data fields */
+        kd->rsa = rsa;
+        ret = 1;
+        goto cleanup;
+    }
+
+    /* Normal path for hardware-supported keys: convert to raw data format */
+    alloc_sz = BN_num_bytes(n) + BN_num_bytes(e);
+
+    if (include_private) {
 	/* param_r is used to identify if this is a multi prime RSA */
 	if (!param_r &&
 	    param_p && OSSL_PARAM_get_BN(param_p, &p) &&
@@ -317,8 +403,17 @@ static int prov_rsa_fromdata(void *keydata, const OSSL_PARAM params[],
 
     kd->base_ptr = base;
     ret = 1;
+    goto cleanup;
 
   err:
+    if (base)
+        pal_free(base);
+    /* Free RSA struct if allocated but not stored in keydata */
+    if (unlikely(rsa != NULL && kd->rsa != rsa))
+        RSA_free(rsa);
+    ret = 0;
+
+  cleanup:
     BN_free(n);
     BN_free(e);
     BN_free(d);
@@ -357,6 +452,9 @@ static int prov_rsa_export(void *keydata, int selection,
     BIGNUM *bn_n = NULL, *bn_e = NULL, *bn_d = NULL;
     BIGNUM *bn_p = NULL, *bn_q = NULL;
     BIGNUM *bn_dP = NULL, *bn_dQ = NULL, *bn_qInv = NULL;
+    const BIGNUM *rsa_n = NULL, *rsa_e = NULL, *rsa_d = NULL;
+    const BIGNUM *rsa_p = NULL, *rsa_q = NULL;
+    const BIGNUM *rsa_dP = NULL, *rsa_dQ = NULL, *rsa_qInv = NULL;
     int ok = 0;
 
     if (kd == NULL || !prov_is_running())
@@ -369,58 +467,86 @@ static int prov_rsa_export(void *keydata, int selection,
     if (tmpl == NULL)
         return 0;
 
-    /* Public key components (always exported) */
-    if (kd->n_data && kd->n_len > 0) {
-        bn_n = BN_bin2bn(kd->n_data, kd->n_len, NULL);
-        if (bn_n == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_N, bn_n))
-            goto err;
-    }
+    /* Handle keys stored as RSA struct (for unsupported key sizes) */
+    if (unlikely(kd->rsa != NULL)) {
+        RSA_get0_key(kd->rsa, &rsa_n, &rsa_e, &rsa_d);
 
-    if (kd->e_data && kd->e_len > 0) {
-        bn_e = BN_bin2bn(kd->e_data, kd->e_len, NULL);
-        if (bn_e == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_E, bn_e))
+        /* Export public key */
+        if (rsa_n && !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_N, rsa_n))
             goto err;
-    }
+        if (rsa_e && !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_E, rsa_e))
+            goto err;
 
-    /* Private key components (if requested and available) */
-    if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0) {
-        /* Export private exponent d if available */
-        if (kd->d_data && kd->d_len > 0) {
-            bn_d = BN_bin2bn(kd->d_data, kd->d_len, NULL);
-            if (bn_d == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_D, bn_d))
+        /* Export private key if requested */
+        if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0) {
+            if (rsa_d && !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_D, rsa_d))
+                goto err;
+
+            RSA_get0_factors(kd->rsa, &rsa_p, &rsa_q);
+            RSA_get0_crt_params(kd->rsa, &rsa_dP, &rsa_dQ, &rsa_qInv);
+
+            if (rsa_p && !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_FACTOR1, rsa_p))
+                goto err;
+            if (rsa_q && !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_FACTOR2, rsa_q))
+                goto err;
+            if (rsa_dP && !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_EXPONENT1, rsa_dP))
+                goto err;
+            if (rsa_dQ && !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_EXPONENT2, rsa_dQ))
+                goto err;
+            if (rsa_qInv && !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_COEFFICIENT1, rsa_qInv))
+                goto err;
+        }
+    } else {
+        /* Handle keys stored as raw data (normal hardware-supported keys) */
+        if (kd->n_data && kd->n_len > 0) {
+            bn_n = BN_bin2bn(kd->n_data, kd->n_len, NULL);
+            if (bn_n == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_N, bn_n))
                 goto err;
         }
 
-        /* Export CRT parameters if available */
-        if (kd->use_crt) {
-            if (kd->qt_p_data && kd->qt_p_len > 0) {
-                bn_p = BN_bin2bn(kd->qt_p_data, kd->qt_p_len, NULL);
-                if (bn_p == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_FACTOR1, bn_p))
+        if (kd->e_data && kd->e_len > 0) {
+            bn_e = BN_bin2bn(kd->e_data, kd->e_len, NULL);
+            if (bn_e == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_E, bn_e))
+                goto err;
+        }
+
+        if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0) {
+            if (kd->d_data && kd->d_len > 0) {
+                bn_d = BN_bin2bn(kd->d_data, kd->d_len, NULL);
+                if (bn_d == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_D, bn_d))
                     goto err;
             }
 
-            if (kd->qt_q_data && kd->qt_q_len > 0) {
-                bn_q = BN_bin2bn(kd->qt_q_data, kd->qt_q_len, NULL);
-                if (bn_q == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_FACTOR2, bn_q))
-                    goto err;
-            }
+            if (kd->use_crt) {
+                if (kd->qt_p_data && kd->qt_p_len > 0) {
+                    bn_p = BN_bin2bn(kd->qt_p_data, kd->qt_p_len, NULL);
+                    if (bn_p == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_FACTOR1, bn_p))
+                        goto err;
+                }
 
-            if (kd->qt_dP_data && kd->qt_dP_len > 0) {
-                bn_dP = BN_bin2bn(kd->qt_dP_data, kd->qt_dP_len, NULL);
-                if (bn_dP == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_EXPONENT1, bn_dP))
-                    goto err;
-            }
+                if (kd->qt_q_data && kd->qt_q_len > 0) {
+                    bn_q = BN_bin2bn(kd->qt_q_data, kd->qt_q_len, NULL);
+                    if (bn_q == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_FACTOR2, bn_q))
+                        goto err;
+                }
 
-            if (kd->qt_dQ_data && kd->qt_dQ_len > 0) {
-                bn_dQ = BN_bin2bn(kd->qt_dQ_data, kd->qt_dQ_len, NULL);
-                if (bn_dQ == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_EXPONENT2, bn_dQ))
-                    goto err;
-            }
+                if (kd->qt_dP_data && kd->qt_dP_len > 0) {
+                    bn_dP = BN_bin2bn(kd->qt_dP_data, kd->qt_dP_len, NULL);
+                    if (bn_dP == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_EXPONENT1, bn_dP))
+                        goto err;
+                }
 
-            if (kd->qt_qInv_data && kd->qt_qInv_len > 0) {
-                bn_qInv = BN_bin2bn(kd->qt_qInv_data, kd->qt_qInv_len, NULL);
-                if (bn_qInv == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_COEFFICIENT1, bn_qInv))
-                    goto err;
+                if (kd->qt_dQ_data && kd->qt_dQ_len > 0) {
+                    bn_dQ = BN_bin2bn(kd->qt_dQ_data, kd->qt_dQ_len, NULL);
+                    if (bn_dQ == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_EXPONENT2, bn_dQ))
+                        goto err;
+                }
+
+                if (kd->qt_qInv_data && kd->qt_qInv_len > 0) {
+                    bn_qInv = BN_bin2bn(kd->qt_qInv_data, kd->qt_qInv_len, NULL);
+                    if (bn_qInv == NULL || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_RSA_COEFFICIENT1, bn_qInv))
+                        goto err;
+                }
             }
         }
     }
@@ -535,36 +661,55 @@ static const OSSL_PARAM *rsa_gen_settable_params(ossl_unused void *genctx,
     return settable;
 }
 
+/**
+ * Convert RSA struct to provider keydata format
+ *
+ * @param rsa Input RSA key structure
+ * @param keydata Output keydata pointer
+ * @return -1 on error, 0 if RSA stored, 1 if converted to keydata
+ */
 static int prov_rsa_to_keydata(RSA *rsa, void **keydata)
 {
     const BIGNUM *p = NULL, *q = NULL, *dP = NULL, *dQ = NULL, *qInv = NULL, *n = NULL, *e = NULL, *d = NULL;
     prov_rsa_key_data *kd = NULL;
     uint8_t *base = NULL;
     int alloc_sz = 0;
-    int ret = 0;
+    int ret = -1;
+    int modulus_bytes = 0;
 
     if (!rsa)
-        return 0;
+        return -1;
 
     kd = pal_malloc(sizeof(prov_rsa_key_data));
     if (!kd)
-        return 0;
+        return -1;
     memset(kd, 0, sizeof(prov_rsa_key_data));
     PROV_ATOMIC_INC(kd->refcnt);
 
     RSA_get0_key(rsa, &n, &e, &d);
+
+    if (!n || !e)
+        goto err;
+
+    modulus_bytes = BN_num_bytes(n);
+
+    /* Check if hardware supports this modulus length */
+    if (pal_rsa_capability_check_modlen(modulus_bytes)) {
+        /* Hardware doesn't support this key size, store as RSA struct for SW fallback */
+        kd->rsa = rsa;
+        *keydata = (void *)kd;
+        return 0;
+    }
+
     RSA_get0_factors(rsa, &p, &q);
     RSA_get0_crt_params(rsa, &dP, &dQ, &qInv);
-    int crt_length = BN_num_bytes(n) / 2;
 
-    if (n && e)
-        alloc_sz = BN_num_bytes(n) + BN_num_bytes(e);
-    else
-        goto err;
+    /* Normal path for hardware-supported keys: convert to raw data format */
+    alloc_sz = BN_num_bytes(n) + BN_num_bytes(e);
 
     if (p && q && dP && dQ && qInv && d) {
         alloc_sz += BN_num_bytes(d);
-        alloc_sz += crt_length * 5;
+        alloc_sz += (modulus_bytes / 2) * 5;
     } else if (d) {
         alloc_sz += BN_num_bytes(d);
     } else
@@ -593,19 +738,19 @@ static int prov_rsa_to_keydata(RSA *rsa, void **keydata)
          * is lesser than modlength/2
         */
        kd->qt_p_data = kd->d_data + kd->d_len;
-       kd->qt_p_len = BN_bn2binpad(p, kd->qt_p_data, crt_length);
+       kd->qt_p_len = BN_bn2binpad(p, kd->qt_p_data, modulus_bytes / 2);
 
        kd->qt_q_data = kd->qt_p_data + kd->qt_p_len;
-       kd->qt_q_len = BN_bn2binpad(q, kd->qt_q_data, crt_length);
+       kd->qt_q_len = BN_bn2binpad(q, kd->qt_q_data, modulus_bytes / 2);
 
        kd->qt_dP_data = kd->qt_q_data + kd->qt_q_len;
-       kd->qt_dP_len = BN_bn2binpad(dP, kd->qt_dP_data, crt_length);
+       kd->qt_dP_len = BN_bn2binpad(dP, kd->qt_dP_data, modulus_bytes / 2);
 
        kd->qt_dQ_data = kd->qt_dP_data + kd->qt_dP_len;
-       kd->qt_dQ_len = BN_bn2binpad(dQ, kd->qt_dQ_data, crt_length);
+       kd->qt_dQ_len = BN_bn2binpad(dQ, kd->qt_dQ_data, modulus_bytes / 2);
 
        kd->qt_qInv_data = kd->qt_dQ_data + kd->qt_dQ_len;
-       kd->qt_qInv_len = BN_bn2binpad(qInv, kd->qt_qInv_data, crt_length);
+       kd->qt_qInv_len = BN_bn2binpad(qInv, kd->qt_qInv_data, modulus_bytes / 2);
     }
     else {
       kd->use_crt = 0;
@@ -623,7 +768,7 @@ err:
         pal_free(base);
     if (kd)
         pal_free(kd);
-    return 0;
+    return -1;
 }
 
 static void *rsa_gen(void *genctx, OSSL_CALLBACK *osslcb, void *cbarg)
@@ -632,6 +777,7 @@ static void *rsa_gen(void *genctx, OSSL_CALLBACK *osslcb, void *cbarg)
     RSA *rsa_tmp = NULL;
     void *keydata = NULL;
     BN_GENCB *gencb = NULL;
+    int ret;
 
     if (!prov_is_running() || gctx == NULL)
         return NULL;
@@ -663,12 +809,12 @@ static void *rsa_gen(void *genctx, OSSL_CALLBACK *osslcb, void *cbarg)
     RSA_clear_flags(rsa_tmp, PROV_FLAG_TYPE_MASK);
     RSA_set_flags(rsa_tmp, gctx->rsa_type);
 
-    if (!prov_rsa_to_keydata(rsa_tmp, &keydata)) {
+    ret = prov_rsa_to_keydata(rsa_tmp, &keydata);
+    if (ret < 0)
         goto err;
-    }
 
-    /* Free the RSA object after converting to our key format */
-    RSA_free(rsa_tmp);
+    if (ret == 1)
+        RSA_free(rsa_tmp);
     rsa_tmp = NULL;
 
     BN_GENCB_free(gencb);

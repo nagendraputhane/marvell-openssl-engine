@@ -7,6 +7,7 @@
  * Reference: NIST SP 800-56B Rev 2 - RSASVE
  */
 
+#include "rsa_kem.h"
 #include <string.h>
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
@@ -96,12 +97,9 @@ static void rsa_freectx(void *vctx)
     if (ctx == NULL)
         return;
 
-    /* Decrement reference count on key */
-    if (ctx->key != NULL) {
-        PROV_ATOMIC_DEC(ctx->key->refcnt);
-        if (ctx->key->refcnt <= 0)
-            __prov_rsa_freedata(ctx->key);
-    }
+    /* Release key reference */
+    if (ctx->key != NULL)
+        __prov_rsa_freedata(ctx->key);
 
     OPENSSL_free(ctx);
 }
@@ -136,6 +134,7 @@ static int rsasve_gen_rand_bytes(prov_rsa_key_data *key,
 {
     int ret = 0;
     BN_CTX *bnctx;
+    const BIGNUM *rsa_n = NULL;
     BIGNUM *z, *nminus3, *n;
 
     bnctx = BN_CTX_secure_new();
@@ -152,13 +151,23 @@ static int rsasve_gen_rand_bytes(prov_rsa_key_data *key,
     n = BN_CTX_get(bnctx);
     nminus3 = BN_CTX_get(bnctx);
     z = BN_CTX_get(bnctx);
-    ret = (z != NULL
-           && (n != NULL) && (BN_bin2bn(key->n_data, key->n_len, n) != NULL)
-           && BN_sub_word(n, 3)
-           && BN_copy(nminus3, n)
-           && BN_priv_rand_range(z, nminus3)
-           && BN_add_word(z, 2)
-           && (BN_bn2binpad(z, out, outlen) == outlen));
+
+    /* Get n from either RSA struct or keydata, then compute random */
+    if (unlikely(key->rsa != NULL)) {
+        RSA_get0_key(key->rsa, &rsa_n, NULL, NULL);
+        ret = (z != NULL && n != NULL && BN_copy(n, rsa_n) != NULL);
+    } else {
+        ret = (z != NULL && n != NULL &&
+               BN_bin2bn(key->n_data, prov_rsa_key_len(key), n) != NULL);
+    }
+    if (ret) {
+        ret = (BN_sub_word(n, 3)
+               && BN_copy(nminus3, n)
+               && BN_priv_rand_range(z, nminus3)
+               && BN_add_word(z, 2)
+               && (BN_bn2binpad(z, out, outlen) == outlen));
+    }
+
     BN_CTX_end(bnctx);
     BN_CTX_free(bnctx);
     return ret;
@@ -176,16 +185,16 @@ static int rsa_init(void *vctx, void *vkey, const OSSL_PARAM params[])
         return 0;
 
     /* Basic key validation - check if we have public key components */
-    if (key->n_data == NULL || key->e_data == NULL) {
-        ERR_raise(ERR_LIB_PROV, PROV_R_MISSING_KEY);
-        return 0;
+    if (likely(key->rsa == NULL)) {
+        /* For HW-supported keys, check raw data */
+        if (key->n_data == NULL || key->e_data == NULL) {
+            ERR_raise(ERR_LIB_PROV, PROV_R_MISSING_KEY);
+            return 0;
+        }
     }
 
-    if (ctx->key != NULL) {
-        PROV_ATOMIC_DEC(ctx->key->refcnt);
-        if (ctx->key->refcnt <= 0)
-            __prov_rsa_freedata(ctx->key);
-    }
+    if (ctx->key != NULL)
+        __prov_rsa_freedata(ctx->key);
 
     ctx->key = key;
     PROV_ATOMIC_INC(ctx->key->refcnt);
@@ -219,8 +228,8 @@ static int rsa_generate_encapsulate(void *vctx, unsigned char *out,
     if (!prov_is_running())
         return 0;
 
-    /* Step (1): nlen = Ceil(len(n)/8) */
-    nlen = key->n_len;
+    /* Step (1): nlen = Ceil(len(n)/8) - use helper function */
+    nlen = prov_rsa_key_len(key);
 
     if (nlen == 0) {
         ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_KEY);
@@ -254,6 +263,23 @@ static int rsa_generate_encapsulate(void *vctx, unsigned char *out,
     if (!rsasve_gen_rand_bytes(key, secret, nlen))
         return 0;
 
+    /* Use software fallback if key has RSA struct (HW-unsupported) */
+    if (unlikely(key->rsa != NULL)) {
+        ret = RSA_public_encrypt(nlen, secret, out, key->rsa, RSA_NO_PADDING);
+        if (ret < 0) {
+            fprintf(stderr, "%s:%d:%s(): RSA_public_encrypt failed\n",
+                    __FILE__, __LINE__, __func__);
+            ERR_print_errors_fp(stderr);
+            OPENSSL_cleanse(secret, nlen);
+            return 0;
+        }
+        if (outlen != NULL)
+            *outlen = ret;
+        if (secretlen != NULL)
+            *secretlen = nlen;
+        return 1;
+    }
+
     /* Step(3): out = RSAEP((n,e), z) - raw RSA encryption with NO_PADDING */
     rsa_xform_pub_setup(key, &pal_ctx);
     pal_ctx.padding = PAL_RSA_NO_PADDING;
@@ -261,7 +287,7 @@ static int rsa_generate_encapsulate(void *vctx, unsigned char *out,
 
     /* Encrypt the secret using RSA public key */
     ret = pal_rsa_pub_enc(&pal_ctx, nlen, secret, out);
-    if (ret) {
+    if (ret > 0) {
         ret = 1;
         if (outlen != NULL)
             *outlen = nlen;
@@ -269,6 +295,7 @@ static int rsa_generate_encapsulate(void *vctx, unsigned char *out,
             *secretlen = nlen;
     } else {
         OPENSSL_cleanse(secret, nlen);
+        ret = 0;
     }
     return ret;
 }
@@ -286,27 +313,28 @@ static int rsa_decapsulate_init(void *vctx, void *vkey,
         return 0;
 
     /* Check if we have private key components */
-    if (key->n_data == NULL || key->e_data == NULL) {
-        ERR_raise(ERR_LIB_PROV, PROV_R_MISSING_KEY);
-        return 0;
-    }
+    if (likely(key->rsa == NULL)) {
+        /* For HW-supported keys, check raw data */
+        if (key->n_data == NULL || key->e_data == NULL) {
+            ERR_raise(ERR_LIB_PROV, PROV_R_MISSING_KEY);
+            return 0;
+        }
 
-    /* Verify we have private key (either CRT or non-CRT) */
-    if (!key->use_crt && key->d_data == NULL) {
-        ERR_raise(ERR_LIB_PROV, PROV_R_MISSING_KEY);
-        return 0;
-    }
+        /* Verify we have private key (either CRT or non-CRT) */
+        if (!key->use_crt && key->d_data == NULL) {
+            ERR_raise(ERR_LIB_PROV, PROV_R_MISSING_KEY);
+            return 0;
+        }
 
-    if (key->use_crt && (key->qt_p_data == NULL || key->qt_q_data == NULL)) {
-        ERR_raise(ERR_LIB_PROV, PROV_R_MISSING_KEY);
-        return 0;
+        if (key->use_crt && (key->qt_p_data == NULL || key->qt_q_data == NULL)) {
+            ERR_raise(ERR_LIB_PROV, PROV_R_MISSING_KEY);
+            return 0;
+        }
     }
+    /* HW-unsupported keys stored as RSA struct are always valid */
 
-    if (ctx->key != NULL) {
-        PROV_ATOMIC_DEC(ctx->key->refcnt);
-        if (ctx->key->refcnt <= 0)
-            __prov_rsa_freedata(ctx->key);
-    }
+    if (ctx->key != NULL)
+        __prov_rsa_freedata(ctx->key);
 
     ctx->key = key;
     PROV_ATOMIC_INC(ctx->key->refcnt);
@@ -337,8 +365,8 @@ static int rsa_decapsulate(void *vctx, unsigned char *out, size_t *outlen,
     if (!prov_is_running())
         return 0;
 
-    /* Step (1): get the byte length of n */
-    nlen = key->n_len;
+    /* Step (1): get the byte length of n - use helper function */
+    nlen = prov_rsa_key_len(key);
 
     if (nlen == 0) {
         ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_KEY);
@@ -366,6 +394,21 @@ static int rsa_decapsulate(void *vctx, unsigned char *out, size_t *outlen,
     if (outlen != NULL && *outlen < nlen) {
         ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_OUTPUT_LENGTH);
         return 0;
+    }
+
+    /* Use software fallback if key has RSA struct (HW-unsupported) */
+    if (unlikely(key->rsa != NULL)) {
+        /* Decrypt using software RSA private key with NO_PADDING */
+        ret = RSA_private_decrypt(inlen, in, out, key->rsa, RSA_NO_PADDING);
+        if (ret < 0) {
+            fprintf(stderr, "%s:%d:%s(): RSA_private_decrypt failed\n",
+                    __FILE__, __LINE__, __func__);
+            ERR_print_errors_fp(stderr);
+            return 0;
+        }
+        if (outlen != NULL)
+            *outlen = ret;
+        return 1;
     }
 
     /* Step (3): out = RSADP((n,d), in) - raw RSA decryption with NO_PADDING */
