@@ -283,3 +283,4 @@ d). Benchmark AES-128-CBC async mode
 - EC Point Multiplication is currently not supported.
 - OpenSSL speed test supports upto 8 processes with LC provider.
 - ECDSA sign and verify operations are supported only with s_server and s_client and speed app is not yet supported.
+- s_client and speed app is not yet supported.
