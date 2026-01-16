@@ -31,7 +31,7 @@ int pal_create_aead_session(pal_crypto_aead_algorithm_t algo,
 
 	if (pal_ctx->aead_cry_session.fc.aes_key_len == -1)
 	{
-		engine_log(ENG_LOG_ERR, "Invalid key length: %d\n", pal_ctx->keylen);
+		ossl_log(OSSL_LOG_ERR, "Invalid key length: %d\n", pal_ctx->keylen);
 		return -1;
 	}
 
@@ -41,7 +41,7 @@ int pal_create_aead_session(pal_crypto_aead_algorithm_t algo,
 	ret = sym_create_session(pal_ctx->dev_id, pal_ctx->aead_cry_session, &pal_ctx->aead_event, reconfigure, sess_cookie);
 	if (ret == 0)
 	{
-		engine_log(ENG_LOG_ERR, "Could not create session.\n");
+		ossl_log(OSSL_LOG_ERR, "Could not create session.\n");
 		return -1;
 	}
 
@@ -77,7 +77,7 @@ int pal_create_cipher_session( pal_crypto_cipher_algorithm_t algo,
 
 	if (pal_ctx->cipher_cry_session.fc.aes_key_len == -1)
 	{
-		engine_log(ENG_LOG_ERR, "Invalid key length: %d\n", pal_ctx->keylen);
+		ossl_log(OSSL_LOG_ERR, "Invalid key length: %d\n", pal_ctx->keylen);
 		return -1;
 	}
 
@@ -87,7 +87,7 @@ int pal_create_cipher_session( pal_crypto_cipher_algorithm_t algo,
 	ret = sym_create_session(pal_ctx->dev_id, pal_ctx->cipher_cry_session, &pal_ctx->cipher_event, 0, sess_cookie);
 	if (ret == 0)
 	{
-		engine_log(ENG_LOG_ERR, "Could not create session.\n");
+		ossl_log(OSSL_LOG_ERR, "Could not create session.\n");
 		return -1;
 	}
 
@@ -128,7 +128,7 @@ int pal_aes_gcm_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *buf,
 		if (pal_ctx->iv_cb(usr_ctx, pal_ctx->enc,
 				pal_ctx->tls_exp_iv_len, pal_ctx->output_buf[i]) < 0)
 		{
-			engine_log(ENG_LOG_ERR, "Failed to set IV\n");
+			ossl_log(OSSL_LOG_ERR, "Failed to set IV\n");
 			ret = -1;
 			goto free_resources;
 		}
@@ -141,7 +141,7 @@ int pal_aes_gcm_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *buf,
 
 		status_ptr[i] = pal_malloc(sizeof(pal_cry_op_status_t));
 		if (unlikely(!status_ptr[i])) {
-			engine_log(ENG_LOG_ERR, "Failed to allocate status\n");
+			ossl_log(OSSL_LOG_ERR, "Failed to allocate status\n");
 			ret = -1;
 			goto free_resources;
 		}
@@ -151,12 +151,30 @@ int pal_aes_gcm_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *buf,
 		status_ptr[i]->numpipes = numpipes;
 		status_ptr[i]->wctx_p = wctx;
 
-		if (prepare_lc_buf(&in_buf[i], pal_ctx->input_buf[i], pal_ctx->input_len[i] + pal_ctx->tls_tag_len) < 0) {
+	/* TLS mode: In-place tag handling with contiguous buffer.
+	 *
+	 * Physical buffer allocation: [data][tag] - contiguous in memory
+	 * Buffer descriptor (frag_len): describes data portion only
+	 * digest pointer: indicates tag location (in or out + input_len)
+	 * The LC API internally adds digest_len to the hardware descriptor
+
+	 * Encryption:
+	 *   - in_buf_len = data only, out_buf_len = data only
+	 *   - digest = output_buf + input_len (tag written here)
+
+	 * Decryption:
+	 *   - in_buf_len = data only, out_buf_len = data only
+	 *   - digest = input_buf + input_len (tag location in input)
+	 */
+	size_t in_buf_len = pal_ctx->input_len[i];
+	size_t out_buf_len = pal_ctx->input_len[i];
+
+	if (prepare_lc_buf(&in_buf[i], pal_ctx->input_buf[i], in_buf_len) < 0) {
 			ret = -1;
 			goto free_resources;
 		}
 
-		if (prepare_lc_buf(&out_buf[i], pal_ctx->output_buf[i], pal_ctx->input_len[i] + pal_ctx->tls_tag_len) < 0) {
+		if (prepare_lc_buf(&out_buf[i], pal_ctx->output_buf[i], out_buf_len) < 0) {
 			ret = -1;
 			goto free_resources;
 		}
@@ -174,8 +192,12 @@ int pal_aes_gcm_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *buf,
 		enq_op_ptr[i].auth_len = 0;
 		enq_op_ptr[i].auth_offset = 0;
 		enq_op_ptr[i].auth_iv = NULL;
-		/* If digest is NULL, the auth tag is placed/read right after ciphered data in the buffer. */
-		enq_op_ptr[i].digest = NULL;
+		/* Tag is in-place: at end of input for decrypt, at end of output for encrypt */
+		if (pal_ctx->enc) {
+			enq_op_ptr[i].digest = pal_ctx->output_buf[i] + pal_ctx->input_len[i];
+		} else {
+			enq_op_ptr[i].digest = pal_ctx->input_buf[i] + pal_ctx->input_len[i];
+		}
 	}
 
 /* Enqueue this crypto operation in the crypto device */
@@ -191,7 +213,7 @@ int pal_aes_gcm_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *buf,
 
 	if (unlikely(num_enqueued_ops < numpipes))
 	{
-		engine_log(ENG_LOG_ERR, "Enqueue failed - too many attempts\n");
+		ossl_log(OSSL_LOG_ERR, "Enqueue failed - too many attempts\n");
 		numalloc = numpipes;
 		ret = -1;
 		goto free_resources;
@@ -298,7 +320,7 @@ static int crypto_ctr_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 	// Allocate operation and status
 	status = pal_malloc(sizeof(pal_cry_op_status_t));
 	if (unlikely(!status)) {
-		engine_log(ENG_LOG_ERR, "Failed to allocate op or status\n");
+		ossl_log(OSSL_LOG_ERR, "Failed to allocate op or status\n");
 		goto cleanup;
 	}
 
@@ -307,12 +329,12 @@ static int crypto_ctr_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 
 	// Prepare input buffer
 	if (prepare_lc_buf(&in_buf, (uint8_t *)in, len) < 0) {
-		engine_log(ENG_LOG_ERR, "Failed to prepare input buffer\n");
+		ossl_log(OSSL_LOG_ERR, "Failed to prepare input buffer\n");
 		goto cleanup;
 	}
 
 	if (prepare_lc_buf(&out_buf, (uint8_t *)out, len) < 0) {
-		engine_log(ENG_LOG_ERR, "Failed to prepare output buffer\n");
+		ossl_log(OSSL_LOG_ERR, "Failed to prepare output buffer\n");
 		goto cleanup;
 	}
 	// Fill LC operation fields
@@ -333,7 +355,7 @@ static int crypto_ctr_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 
 	// Enqueue the operation
 	if (dao_liquid_crypto_sym_enqueue_burst(dev_id, sym_queue, &enq_op_ptr[0], 1) != 1) {
-		engine_log(ENG_LOG_ERR, "Crypto enqueue failed\n");
+		ossl_log(OSSL_LOG_ERR, "Crypto enqueue failed\n");
 		goto cleanup;
 	}
 
@@ -353,7 +375,7 @@ static int crypto_ctr_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 								deq_op_ptr[i].res.cn9k.uc_compcode == DAO_UC_SUCCESS);
 
 			if (!st->is_successful) {
-				engine_log(ENG_LOG_ERR, "Crypto CTR op failed (compcode=%d, uc_compcode=%d)\n",
+				ossl_log(OSSL_LOG_ERR, "Crypto CTR op failed (compcode=%d, uc_compcode=%d)\n",
 							deq_op_ptr[i].res.cn9k.compcode,
 							deq_op_ptr[i].res.cn9k.uc_compcode);
 			}
@@ -387,14 +409,15 @@ cleanup:
  * Normal crypto application
  */
 int pal_crypto_gcm_non_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
-					const unsigned char *in, size_t len,
-					unsigned char *buf)
+				const unsigned char *in, size_t len,
+				unsigned char *buf)
 {
 	int ret = -1;
 
 	// If no AAD is set, fallback to CTR mode
 	if (pal_ctx->aad_len == -1) {
-		return crypto_ctr_cipher(pal_ctx, out, in, len, buf);
+		ossl_log(OSSL_LOG_ERR, "AES-GCM CTR mode not supported\n");
+		return ret;
 	}
 
 	struct dao_lc_sym_op enq_op_ptr[1];
@@ -408,20 +431,31 @@ int pal_crypto_gcm_non_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 	// Allocate status
 	status = pal_malloc(sizeof(pal_cry_op_status_t));
 	if (unlikely(!status)) {
-		engine_log(ENG_LOG_ERR, "Failed to allocate op or status\n");
+		ossl_log(OSSL_LOG_ERR, "Failed to allocate op or status\n");
 		goto cleanup;
 	}
 
 	status->is_successful = 0;
 	status->is_complete = 0;
 
-	if (prepare_lc_buf(&in_buf, (uint8_t *)in, len + pal_ctx->tls_tag_len) < 0) {
-		engine_log(ENG_LOG_ERR, "Failed to prepare input buffer\n");
+	 /* Encryption:
+	 *   in_buf_len = len (data only), out_buf_len = len (data only)
+	 *   digest = out + len (tag written here)
+	 *
+	 * Decryption:
+	 *   in_buf_len = len (data only), out_buf_len = len (data only)
+	 *   digest = in + len (tag location in input)
+	 */
+	size_t in_buf_len = len;
+	size_t out_buf_len = len;
+
+	if (prepare_lc_buf(&in_buf, (uint8_t *)in, in_buf_len) < 0) {
+		ossl_log(OSSL_LOG_ERR, "Failed to prepare input buffer\n");
 		goto cleanup;
 	}
 
-	if (prepare_lc_buf(&out_buf, (uint8_t *)out, len + pal_ctx->tls_tag_len) < 0) {
-		engine_log(ENG_LOG_ERR, "Failed to prepare input buffer\n");
+	if (prepare_lc_buf(&out_buf, (uint8_t *)out, out_buf_len) < 0) {
+		ossl_log(OSSL_LOG_ERR, "Failed to prepare output buffer\n");
 		goto cleanup;
 	}
 
@@ -438,12 +472,18 @@ int pal_crypto_gcm_non_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 	enq_op_ptr[0].auth_len = 0;
 	enq_op_ptr[0].auth_offset = 0;
 	enq_op_ptr[0].auth_iv = NULL;
-	/* If digest is NULL, the auth tag is placed/read right after ciphered data in the buffer. */
-	enq_op_ptr[0].digest = NULL;
+	/* Tag handling: symmetric for encryption and decryption (both use in-place location).
+	 * - Encrypt: digest = out + len (tag written after output data)
+	 * - Decrypt: digest = in + len (tag already present after input data) */
+	if (pal_ctx->enc) {
+		enq_op_ptr[0].digest = (uint8_t *)out + len;
+	} else {
+		enq_op_ptr[0].digest = (uint8_t *)in + len;  // Tag at end of input buffer
+	}
 
 	// Enqueue the operation
 	if (dao_liquid_crypto_sym_enqueue_burst(dev_id, sym_queue, &enq_op_ptr[0], 1) != 1) {
-		engine_log(ENG_LOG_ERR, "Crypto enqueue failed\n");
+		ossl_log(OSSL_LOG_ERR, "Crypto enqueue failed\n");
 		goto cleanup;
 	}
 
@@ -463,7 +503,7 @@ int pal_crypto_gcm_non_tls_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 								 deq_op_ptr[i].res.cn9k.uc_compcode == DAO_UC_SUCCESS);
 
 			if (!st->is_successful) {
-				engine_log(ENG_LOG_ERR, "Crypto GCM op failed (compcode=%d, uc_compcode=%d)\n",
+				ossl_log(OSSL_LOG_ERR, "Crypto GCM op failed (compcode=%d, uc_compcode=%d)\n",
 							deq_op_ptr[i].res.cn9k.compcode,
 							deq_op_ptr[i].res.cn9k.uc_compcode);
 			}
@@ -504,14 +544,15 @@ cleanup:
 }
 
 int pal_crypto_gcm_tls_1_3_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
-								const unsigned char *in, size_t len,
-								unsigned char *buf, void *wctx)
+							const unsigned char *in, size_t len,
+							unsigned char *buf, void *wctx)
 {
 	int ret = -1;
 
 	// If no AAD is set, fallback to CTR mode
 	if (pal_ctx->aad_len == -1) {
-		return crypto_ctr_cipher(pal_ctx, out, in, len, buf);
+		ossl_log(OSSL_LOG_ERR, "AES-GCM CTR mode not supported\n");
+		return ret;
 	}
 
 	struct dao_lc_sym_op enq_op_ptr[1];
@@ -525,20 +566,31 @@ int pal_crypto_gcm_tls_1_3_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 	// Allocate status
 	status = pal_malloc(sizeof(pal_cry_op_status_t));
 	if (unlikely(!status)) {
-		engine_log(ENG_LOG_ERR, "Failed to allocate op or status\n");
+		ossl_log(OSSL_LOG_ERR, "Failed to allocate op or status\n");
 		goto cleanup;
 	}
 
 	status->is_successful = 0;
 	status->is_complete = 0;
 
-	if (prepare_lc_buf(&in_buf, (uint8_t *)in, len + pal_ctx->tls_tag_len) < 0) {
-		engine_log(ENG_LOG_ERR, "Failed to prepare input buffer\n");
+	 /* Encryption:
+	 *   in_buf_len = len (data only), out_buf_len = len (data only)
+	 *   digest = out + len (tag written here)
+	 *
+	 * Decryption:
+	 *   in_buf_len = len (data only), out_buf_len = len (data only)
+	 *   digest = in + len (tag location in input)
+	 */
+	size_t in_buf_len = len;
+	size_t out_buf_len = len;
+
+	if (prepare_lc_buf(&in_buf, (uint8_t *)in, in_buf_len) < 0) {
+		ossl_log(OSSL_LOG_ERR, "Failed to prepare input buffer\n");
 		goto cleanup;
 	}
 
-	if (prepare_lc_buf(&out_buf, (uint8_t *)out, len + pal_ctx->tls_tag_len) < 0) {
-		engine_log(ENG_LOG_ERR, "Failed to prepare input buffer\n");
+	if (prepare_lc_buf(&out_buf, (uint8_t *)out, out_buf_len) < 0) {
+		ossl_log(OSSL_LOG_ERR, "Failed to prepare output buffer\n");
 		goto cleanup;
 	}
 
@@ -555,12 +607,18 @@ int pal_crypto_gcm_tls_1_3_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 	enq_op_ptr[0].auth_len = 0;
 	enq_op_ptr[0].auth_offset = 0;
 	enq_op_ptr[0].auth_iv = NULL;
-	/* If digest is NULL, the auth tag is placed/read right after ciphered data in the buffer. */
-	enq_op_ptr[0].digest = NULL;
+	/* Tag handling: symmetric for encryption and decryption (both use in-place location).
+	 * - Encrypt: digest = out + len (tag written after output data)
+	 * - Decrypt: digest = in + len (tag already present after input data) */
+	if (pal_ctx->enc) {
+		enq_op_ptr[0].digest = (uint8_t *)out + len;
+	} else {
+		enq_op_ptr[0].digest = (uint8_t *)in + len;  // Tag at end of input buffer
+	}
 
 	// Enqueue the operation
 	if (dao_liquid_crypto_sym_enqueue_burst(dev_id, sym_queue, &enq_op_ptr[0], 1) != 1) {
-		engine_log(ENG_LOG_ERR, "Crypto enqueue failed\n");
+		ossl_log(OSSL_LOG_ERR, "Crypto enqueue failed\n");
 		goto cleanup;
 	}
 
@@ -580,7 +638,7 @@ int pal_crypto_gcm_tls_1_3_cipher(pal_gcm_ctx_t *pal_ctx, unsigned char *out,
 								 deq_op_ptr[i].res.cn9k.uc_compcode == DAO_UC_SUCCESS);
 
 			if (!st->is_successful) {
-				engine_log(ENG_LOG_ERR, "Crypto GCM op failed (compcode=%d, uc_compcode=%d)\n",
+				ossl_log(OSSL_LOG_ERR, "Crypto GCM op failed (compcode=%d, uc_compcode=%d)\n",
 							deq_op_ptr[i].res.cn9k.compcode,
 							deq_op_ptr[i].res.cn9k.uc_compcode);
 			}

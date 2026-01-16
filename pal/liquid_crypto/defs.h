@@ -158,8 +158,8 @@ typedef struct pal_gcm_ctx {
 	struct dao_lc_sym_op *op;
 	uint8_t **input_buf;
 	uint8_t **output_buf;
-	long int *input_len;
-	long int *output_len;
+	size_t *input_len;
+	size_t *output_len;
 	char aad_pipe[SSL_MAX_PIPELINES][TLS_AAD_LEN];
 	uint8_t key[32];
 	uint64_t iv[3];
@@ -184,7 +184,7 @@ typedef struct pal_gcm_ctx {
 	async_job async_cb;
 } pal_gcm_ctx_t;
 
-int prepare_lc_buf(struct dao_lc_buf **head, uint8_t *data, long int len);
+int prepare_lc_buf(struct dao_lc_buf **head, uint8_t *data, size_t len);
 int sym_create_session(uint16_t dev_id,
 		struct dao_lc_sym_ctx cry_session,struct dao_lc_cmd_event *event, uint8_t reconfigure, uint64_t sess_cookie);
 int sym_session_cleanup(struct dao_lc_cmd_event *event, int dev_id);

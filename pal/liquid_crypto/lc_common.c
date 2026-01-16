@@ -99,15 +99,15 @@ int sym_session_cleanup(struct dao_lc_cmd_event *event, int dev_id)
 	return 1;
 }
 
-int prepare_lc_buf(struct dao_lc_buf **head, uint8_t *data, long int len)
+int prepare_lc_buf(struct dao_lc_buf **head, uint8_t *data, size_t len)
 {
-	long int remaining = len;
-	long int copied = 0;
+	size_t remaining = len;
+	size_t copied = 0;
 	struct dao_lc_buf *seg_buf = NULL, *prev = NULL;
 	*head = NULL;
 
 	while (remaining > 0) {
-		long int seg = remaining > LIQUID_CRYPTO_BUF_SZ_MAX ? LIQUID_CRYPTO_BUF_SZ_MAX : remaining;
+		size_t seg = remaining > LIQUID_CRYPTO_BUF_SZ_MAX ? LIQUID_CRYPTO_BUF_SZ_MAX : remaining;
 
 		seg_buf = pal_malloc(sizeof(struct dao_lc_buf));
 		if (unlikely(!seg_buf)) {
