@@ -189,6 +189,12 @@ The script performs the following steps:
 .. code-block:: shell
 
 	 export LD_LIBRARY_PATH=/path/to/openssl/lib:/path/to/dpdk/lib:/path/to/dao/lib:$LD_LIBRARY_PATH
+	 # Set the base VF PCI address for specific device selection
+	 # If not set, the provider will use all bound vfio-pci interfaces
+	 export SDP_VF_BASE=0000:01:02.0
+	 # (Optional) Set the maximum number of LC devices to use
+	 # Default is 8 if not set
+	 export MAX_LC_DEVS=8
 
 8. Testing OpenSSL LC Provider
 ------------------------------
