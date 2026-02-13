@@ -12,8 +12,8 @@ openssl_conf = openssl_init
 engines = engine_section
 
 [ eal_params_section ]
-eal_params_common = "E_DPDKCPT --socket-mem=500 -d librte_mempool_ring.so -d librte_crypto_cnxk.so"
-eal_params_cptpf_dbdf = "0002:20:00.0"
+eal_params_common = "E_DPDKCPT --socket-mem=500 -d librte_mempool_ring.so"
+eal_params_cptpf_dbdf = "0002:10:00.0"
 
 [ engine_section ]
 dpdk_engine = dpdkcpt_engine_section
