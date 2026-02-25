@@ -124,6 +124,7 @@ typedef struct pal_ecdsa_ctx {
 	uint8_t *wctx_p;
 	uint8_t is_completed;
 	int8_t is_success;
+	uint8_t rs_output[PCURVES_MAX_DER_SIG_LEN * 2];
 } pal_ecdsa_ctx_t;
 
 #define PAL_ASSERT(cond, error_msg) \

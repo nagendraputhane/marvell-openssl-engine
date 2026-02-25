@@ -18,11 +18,10 @@ int pal_ecdsa_sign(pal_ecdsa_ctx_t *pal_ctx)
 	uint8_t dev_id = glb_params.dev_id;
 	uint16_t qp_id = glb_params.qp_id;
 	uint64_t op_cookie = (uint64_t)(uintptr_t)pal_ctx;
-	uint8_t rs_output[PCURVES_MAX_DER_SIG_LEN * 2]; // Output buffer for R,S values
 	struct dao_lc_res res;
 	int ret, nb_rx = 0;
 
-	memset(rs_output, 0, sizeof(rs_output));
+	memset(pal_ctx->rs_output, 0, sizeof(pal_ctx->rs_output));
 	// Initialize completion flags
 	pal_ctx->is_completed = 0;
 	pal_ctx->is_success = 0;
@@ -35,7 +34,7 @@ int pal_ecdsa_sign(pal_ecdsa_ctx_t *pal_ctx)
 		dev_id, qp_id, pal_ctx->curve_id,
 		pal_ctx->secret_len, pal_ctx->pkey_len, pal_ctx->dlen,
 		pal_ctx->secret, pal_ctx->pkey, (uint8_t *)pal_ctx->dgst,
-		rs_output, op_cookie);
+		pal_ctx->rs_output, op_cookie);
 
 	if (unlikely(ret < 0)) {
 		fprintf(stderr, "Could not enqueue ECDSA sign operation");
@@ -66,8 +65,8 @@ int pal_ecdsa_sign(pal_ecdsa_ctx_t *pal_ctx)
 				uint16_t prime_length = res.ecdsa.ecc_rs_out_len / 2;
 
 				// Copy the signature components
-				memcpy(completed_ctx->rdata, rs_output, prime_length);
-				memcpy(completed_ctx->sdata, rs_output + prime_length, prime_length);
+				memcpy(completed_ctx->rdata, completed_ctx->rs_output, prime_length);
+				memcpy(completed_ctx->sdata, completed_ctx->rs_output + prime_length, prime_length);
 
 				// Update lengths
 				completed_ctx->rlen = prime_length;
