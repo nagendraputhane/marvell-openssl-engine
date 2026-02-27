@@ -367,9 +367,10 @@ int cpt_engine_rsa_pub_enc(int flen, const unsigned char *from, unsigned char *t
 int cpt_engine_rsa_priv_dec(int flen, const unsigned char *from, unsigned char *to,
 		      RSA *rsa, int padding)
 {
-  uint8_t dev_id;
-  int ret = 0;
-  pal_rsa_ctx_t pal_ctx = {0};
+	uint8_t dev_id;
+	int ret = 0;
+	int use_crt_method = 1;
+	pal_rsa_ctx_t pal_ctx = {0};
 	ASYNC_JOB *job = ASYNC_get_current_job();
 	unsigned int thread_id = pal_get_thread_id();
 
@@ -391,18 +392,28 @@ int cpt_engine_rsa_priv_dec(int flen, const unsigned char *from, unsigned char *
 				padding);
 		return ret;
 	}
+		/* Setup private xform operations */
+	if (!is_crt_meth_possible(rsa))
+		use_crt_method = 0;
 
-  populate_default_params(pal_ctx, padding,dev_id,
-      asym_queues[thread_id], ossl_handle_async_job);
+	if (use_crt_method) {
+		setup_crt_priv_op_xform(&pal_ctx, rsa);
+	} else {
+		ret = setup_noncrt_priv_op_xform(&pal_ctx, rsa);
+		if (unlikely(ret < 0)) {
+			return -1;
+		}
+	}
+	pal_ctx.use_crt_method = use_crt_method;
+	populate_default_params(pal_ctx, padding,dev_id,
+	asym_queues[thread_id], ossl_handle_async_job);
 
-  setup_crt_priv_op_xform(&pal_ctx, rsa);
+	ret = pal_rsa_priv_dec(&pal_ctx, flen, from, to);
 
-  ret = pal_rsa_priv_dec(&pal_ctx, flen, from, to);
+	if (pal_ctx.rsa_n_data) {
+		pal_free(pal_ctx.rsa_n_data);
+		pal_ctx.rsa_n_data = NULL;
+	}
 
- if (pal_ctx.rsa_n_data) {
-   pal_free(pal_ctx.rsa_n_data);
-   pal_ctx.rsa_n_data = NULL;
- }
-
- return ret;
+	return ret;
 }
