@@ -1,0 +1,175 @@
+From f375af50746696019b3b475195ac58867113996c Mon Sep 17 00:00:00 2001
+From: Garvit Varshney <gvarshney@marvell.com>
+Date: Tue, 28 Oct 2025 06:47:42 -0400
+Subject: [PATCH] workaround patch for external application
+
+This patch binds the engine’s default RSA and
+EC Methods in pkey for external application like
+nginx try to call ENGINE_init after the worker
+process is created.
+
+Signed-off-by: Garvit Varshney <gvarshney@marvell.com>
+---
+ crypto/ec/ec_key.c       |  6 ++++++
+ crypto/evp/p_lib.c       |  7 +++++++
+ crypto/rsa/rsa_lib.c     |  6 ++++++
+ include/openssl/ec.h     |  1 +
+ include/openssl/evp.h    |  2 +-
+ include/openssl/rsa.h    |  1 +
+ ssl/statem/statem_srvr.c | 26 ++++++++++++++++++++++++++
+ util/libcrypto.num       |  3 +++
+ 8 files changed, 51 insertions(+), 1 deletion(-)
+
+diff --git a/crypto/ec/ec_key.c b/crypto/ec/ec_key.c
+index 823b5c8c8e..0a805c2cb8 100644
+--- a/crypto/ec/ec_key.c
++++ b/crypto/ec/ec_key.c
+@@ -68,6 +68,12 @@ EC_KEY *EC_KEY_new_by_curve_name(int nid)
+ }
+ #endif
+
++void EC_KEY_set0_engine(EC_KEY *eckey, ENGINE* engine)
++{
++	    eckey->engine = engine;
++	    eckey->meth = ENGINE_get_EC(engine);
++}
++
+ void EC_KEY_free(EC_KEY *r)
+ {
+     int i;
+diff --git a/crypto/evp/p_lib.c b/crypto/evp/p_lib.c
+index aaba871705..4b76acbbd1 100644
+--- a/crypto/evp/p_lib.c
++++ b/crypto/evp/p_lib.c
+@@ -59,6 +59,13 @@ static void evp_pkey_free_it(EVP_PKEY *key);
+ /* The type of parameters selected in key parameter functions */
+ # define SELECT_PARAMETERS OSSL_KEYMGMT_SELECT_DOMAIN_PARAMETERS
+
++void *EVP_PKEY_get_keydata(EVP_PKEY *pkey)
++{
++      if (pkey != NULL)
++            return pkey->keydata;
++       return NULL;
++}
++
+ int EVP_PKEY_get_bits(const EVP_PKEY *pkey)
+ {
+     int size = 0;
+diff --git a/crypto/rsa/rsa_lib.c b/crypto/rsa/rsa_lib.c
+index eb9c44b85a..4f9e075008 100644
+--- a/crypto/rsa/rsa_lib.c
++++ b/crypto/rsa/rsa_lib.c
+@@ -445,6 +445,12 @@ int RSA_set0_factors(RSA *r, BIGNUM *p, BIGNUM *q)
+     return 1;
+ }
+
++void RSA_set0_engine(RSA *r, ENGINE* engine)
++{
++   r->engine = engine;
++   r->meth = ENGINE_get_RSA(engine);
++}
++
+ int RSA_set0_crt_params(RSA *r, BIGNUM *dmp1, BIGNUM *dmq1, BIGNUM *iqmp)
+ {
+     /* If the fields dmp1, dmq1 and iqmp in r are NULL, the corresponding input
+diff --git a/include/openssl/ec.h b/include/openssl/ec.h
+index e1cbe98228..d050c70482 100644
+--- a/include/openssl/ec.h
++++ b/include/openssl/ec.h
+@@ -860,6 +860,7 @@ int EC_POINT_cmp(const EC_GROUP *group, const EC_POINT *a, const EC_POINT *b,
+                  BN_CTX *ctx);
+
+ #  ifndef OPENSSL_NO_DEPRECATED_3_0
++OSSL_DEPRECATEDIN_3_0 void EC_KEY_set0_engine(EC_KEY *eckey, ENGINE* engine);
+ OSSL_DEPRECATEDIN_3_0 int EC_POINT_make_affine(const EC_GROUP *group,
+                                                EC_POINT *point, BN_CTX *ctx);
+ OSSL_DEPRECATEDIN_3_0 int EC_POINTs_make_affine(const EC_GROUP *group, size_t num,
+diff --git a/include/openssl/evp.h b/include/openssl/evp.h
+index f70b9d744d..02d265b7e6 100644
+--- a/include/openssl/evp.h
++++ b/include/openssl/evp.h
+@@ -2001,7 +2001,7 @@ int EVP_PKEY_pairwise_check(EVP_PKEY_CTX *ctx);
+     CRYPTO_get_ex_new_index(CRYPTO_EX_INDEX_EVP_PKEY, l, p, newf, dupf, freef)
+ int EVP_PKEY_set_ex_data(EVP_PKEY *key, int idx, void *arg);
+ void *EVP_PKEY_get_ex_data(const EVP_PKEY *key, int idx);
+-
++void *EVP_PKEY_get_keydata(EVP_PKEY *pkey);
+ void EVP_PKEY_CTX_set_cb(EVP_PKEY_CTX *ctx, EVP_PKEY_gen_cb *cb);
+ EVP_PKEY_gen_cb *EVP_PKEY_CTX_get_cb(EVP_PKEY_CTX *ctx);
+
+diff --git a/include/openssl/rsa.h b/include/openssl/rsa.h
+index 167427d3c4..2533cfaa0b 100644
+--- a/include/openssl/rsa.h
++++ b/include/openssl/rsa.h
+@@ -220,6 +220,7 @@ OSSL_DEPRECATEDIN_3_0 int RSA_set0_factors(RSA *r, BIGNUM *p, BIGNUM *q);
+ OSSL_DEPRECATEDIN_3_0 int RSA_set0_crt_params(RSA *r,
+                                               BIGNUM *dmp1, BIGNUM *dmq1,
+                                               BIGNUM *iqmp);
++OSSL_DEPRECATEDIN_3_0 void RSA_set0_engine(RSA *r, ENGINE* engine);
+ OSSL_DEPRECATEDIN_3_0 int RSA_set0_multi_prime_params(RSA *r,
+                                                       BIGNUM *primes[],
+                                                       BIGNUM *exps[],
+diff --git a/ssl/statem/statem_srvr.c b/ssl/statem/statem_srvr.c
+index dbdaf3816e..35834a3781 100644
+--- a/ssl/statem/statem_srvr.c
++++ b/ssl/statem/statem_srvr.c
+@@ -27,6 +27,7 @@
+ #include <openssl/core_names.h>
+ #include <openssl/asn1t.h>
+ #include <openssl/comp.h>
++#include <openssl/engine.h>
+
+ #define TICKET_NONCE_SIZE       8
+
+@@ -2753,6 +2754,24 @@ CON_FUNC_RETURN tls_construct_server_key_exchange(SSL_CONNECTION *s,
+     if (lu != NULL) {
+         EVP_PKEY *pkey = s->s3.tmp.cert->privatekey;
+         const EVP_MD *md;
++
++	if (lu->sig == EVP_PKEY_RSA || lu->sig == EVP_PKEY_RSA_PSS) {
++            RSA *rsa_keydata = (RSA *)EVP_PKEY_get_keydata(pkey);
++	    if (rsa_keydata != NULL) {
++	        ENGINE* rsa_engine = ENGINE_get_default_RSA();
++	        if (rsa_engine)
++                    RSA_set0_engine(rsa_keydata, rsa_engine);
++	    }
++	}
++	else {
++            EC_KEY *ec_keydata = (EC_KEY *)EVP_PKEY_get_keydata(pkey);
++            if (ec_keydata != NULL) {
++                ENGINE* ec_engine = ENGINE_get_default_EC();
++		if (ec_engine)
++                    EC_KEY_set0_engine(ec_keydata, ec_engine);
++	    }
++	}
++
+         unsigned char *sigbytes1, *sigbytes2, *tbs;
+         size_t siglen = 0, tbslen;
+
+@@ -2968,6 +2987,13 @@ static int tls_process_cke_rsa(SSL_CONNECTION *s, PACKET *pkt)
+         SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_R_MISSING_RSA_CERTIFICATE);
+         return 0;
+     }
++    RSA *rsa_keydata = (RSA *)EVP_PKEY_get_keydata(rsa);
++    if (rsa_keydata != NULL) {
++        ENGINE* rsa_engine = ENGINE_get_default_RSA();
++        if (rsa_engine)
++           RSA_set0_engine(rsa_keydata, rsa_engine);
++    }
++
+
+     /* SSLv3 and pre-standard DTLS omit the length bytes. */
+     if (s->version == SSL3_VERSION || s->version == DTLS1_BAD_VER) {
+diff --git a/util/libcrypto.num b/util/libcrypto.num
+index 75813690dc..d386c2f3a0 100644
+--- a/util/libcrypto.num
++++ b/util/libcrypto.num
+@@ -5548,3 +5548,6 @@ X509_STORE_get1_objects                 5675	3_3_0	EXIST::FUNCTION:
+ OPENSSL_LH_set_thunks                   5676	3_3_0	EXIST::FUNCTION:
+ OPENSSL_LH_doall_arg_thunk              5677	3_3_0	EXIST::FUNCTION:
+ OSSL_HTTP_REQ_CTX_set_max_response_hdr_lines 5678	3_3_0	EXIST::FUNCTION:HTTP
++EVP_PKEY_get_keydata                   5678	3_0_0	EXIST::FUNCTION:
++RSA_set0_engine                   5679	3_0_0	EXIST::FUNCTION:
++EC_KEY_set0_engine                   5680	3_0_0	EXIST::FUNCTION:
+--
+2.47.3

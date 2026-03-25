@@ -1,0 +1,13 @@
+diff --git a/test/v3ext.c b/test/v3ext.c
+index 9305a30..a4ce3e5 100644
+--- a/test/v3ext.c
++++ b/test/v3ext.c
+@@ -199,7 +199,7 @@ static int test_addr_ranges(void)
+             goto end;
+         if (!TEST_int_eq(ip2->length, ip1->length))
+             goto end;
+-        if (!TEST_true(memcmp(ip1->data, ip2->data, ip1->length) <= 0))
++        if (!TEST_true(memcmp(ip1->data, ip2->data, (unsigned long int)ip1->length) <= 0))
+             goto end;
+ 
+         if (!TEST_true(X509v3_addr_add_range(addr, ranges[i].afi, NULL, ip1->data, ip2->data)))
