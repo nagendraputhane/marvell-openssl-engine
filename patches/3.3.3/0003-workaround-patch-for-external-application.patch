@@ -168,8 +168,8 @@ index 75813690dc..d386c2f3a0 100644
  OPENSSL_LH_set_thunks                   5676	3_3_0	EXIST::FUNCTION:
  OPENSSL_LH_doall_arg_thunk              5677	3_3_0	EXIST::FUNCTION:
  OSSL_HTTP_REQ_CTX_set_max_response_hdr_lines 5678	3_3_0	EXIST::FUNCTION:HTTP
-+EVP_PKEY_get_keydata                   5678	3_0_0	EXIST::FUNCTION:
-+RSA_set0_engine                   5679	3_0_0	EXIST::FUNCTION:
-+EC_KEY_set0_engine                   5680	3_0_0	EXIST::FUNCTION:
++EVP_PKEY_get_keydata                    5679	3_3_3	EXIST::FUNCTION:
++RSA_set0_engine                         5680	3_3_3	EXIST::FUNCTION:
++EC_KEY_set0_engine                      5681	3_3_3	EXIST::FUNCTION:
 --
 2.47.3
