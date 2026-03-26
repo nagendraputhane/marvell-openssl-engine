@@ -9,6 +9,12 @@
 #include "pal_rsa.h"
 
 #define TEST_LC_TIMEOUT 10
+#ifndef PCURVES_MAX_PRIME_LEN
+#define PCURVES_MAX_PRIME_LEN		72 /* P521 curve */
+#endif
+#ifndef PCURVES_MAX_DER_SIG_LEN
+#define PCURVES_MAX_DER_SIG_LEN		141
+#endif
 typedef int (*iv_func_ptr)(void *, int, int, void *);
 
 enum ossl_log_error {
